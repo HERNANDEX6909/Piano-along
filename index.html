@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- "Add to Home Screen" on iPhone: open full-screen like an app -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Piano Wait">
+  <meta name="theme-color" content="#14161c">
+  <title>Piano Wait Mode</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ===================== SONG LIST ===================== -->
+  <section id="screen-songs" class="screen active">
+    <header class="bar">
+      <span class="bar-side"></span>
+      <h1>Piano Wait Mode</h1>
+      <button class="icon-btn bar-side" data-go="settings" aria-label="Settings">⚙︎</button>
+    </header>
+    <main class="content">
+      <label class="btn primary block file-btn">
+        Upload a MIDI file (.mid)
+        <!-- No "accept" filter on purpose: iOS often greys out .mid files when one is set -->
+        <input id="file-input" type="file" hidden>
+      </label>
+      <p id="list-msg" class="msg" hidden></p>
+
+      <h2>My songs</h2>
+      <ul id="my-songs" class="song-list"></ul>
+      <p id="my-empty" class="muted">Songs you upload are saved on this device and show up here.</p>
+
+      <h2>Starter songs</h2>
+      <ul id="builtin-songs" class="song-list"></ul>
+    </main>
+  </section>
+
+  <!-- ===================== PLAY ===================== -->
+  <section id="screen-play" class="screen">
+    <header class="bar">
+      <button id="btn-back" class="icon-btn bar-side" aria-label="Back to songs">‹ Songs</button>
+      <h1 id="play-title">Song</h1>
+      <button class="icon-btn bar-side" data-go="settings" aria-label="Settings">⚙︎</button>
+    </header>
+    <main class="content play">
+      <div id="target-card" class="card target">
+        <div class="target-top">
+          <span class="target-label">Play</span>
+          <span id="progress-text" class="muted">Note 1 of 1</span>
+        </div>
+        <div id="target-name" class="target-name">—</div>
+        <div id="target-hint" class="muted target-hint"></div>
+        <div id="feedback" class="feedback" aria-live="polite"></div>
+        <div class="progress"><div id="progress-fill"></div></div>
+      </div>
+
+      <div id="staff" class="staff" aria-label="Upcoming notes on the staff"></div>
+
+      <div class="controls">
+        <button id="btn-restart" class="btn">↺ Restart</button>
+        <button id="btn-prev" class="btn">‹ Back</button>
+        <button id="btn-skip" class="btn">Skip ›</button>
+      </div>
+
+      <div class="card listen">
+        <button id="mic-btn" class="btn primary block">🎤 Start listening</button>
+        <div id="mic-msg" class="msg" hidden></div>
+        <div class="heard-row">
+          <div>
+            <div class="small muted">Heard</div>
+            <div class="heard-name" data-heard-name>—</div>
+          </div>
+          <div class="heard-meta">
+            <div class="small muted" data-heard-freq>— Hz</div>
+            <div class="cents" title="Flat ← in tune → sharp"><div class="cents-mark" data-cents></div></div>
+          </div>
+        </div>
+        <div class="meter" title="Mic level. The line is the noise gate."><div class="level-fill"></div><div class="gate-mark"></div></div>
+        <div id="engine-info" class="small muted"></div>
+      </div>
+    </main>
+    <!-- On-screen piano (works without the mic) -->
+    <div class="kb-wrap" id="kb-wrap"><div id="keyboard" class="kb"></div></div>
+  </section>
+
+  <!-- ===================== SETTINGS ===================== -->
+  <section id="screen-settings" class="screen">
+    <header class="bar">
+      <button id="btn-settings-done" class="icon-btn bar-side">‹ Done</button>
+      <h1>Settings</h1>
+      <span class="bar-side"></span>
+    </header>
+    <main class="content">
+      <div class="card">
+        <div class="small muted">Live mic level (the line is the noise gate)</div>
+        <div class="meter"><div class="level-fill"></div><div class="gate-mark"></div></div>
+        <div class="heard-row compact">
+          <span class="heard-name small-name" data-heard-name>—</span>
+          <span class="small muted" data-heard-freq>— Hz</span>
+        </div>
+        <button id="btn-calibrate" class="btn block">Set noise gate from room noise (stay quiet 2 s)</button>
+      </div>
+
+      <div id="settings-form"></div>
+
+      <div class="card">
+        <h2>Pitch detector self-test</h2>
+        <p class="small muted">Runs the detector on synthesized piano-like tones (no mic needed) to check it works on this device.</p>
+        <button id="btn-selftest" class="btn block">Run self-test</button>
+        <div id="selftest-out"></div>
+      </div>
+
+      <button id="btn-reset-settings" class="btn block">Reset settings to defaults</button>
+    </main>
+  </section>
+
+  <!-- ===================== MIDI IMPORT ===================== -->
+  <section id="screen-import" class="screen">
+    <header class="bar">
+      <button id="btn-import-cancel" class="icon-btn bar-side">Cancel</button>
+      <h1>Import MIDI</h1>
+      <span class="bar-side"></span>
+    </header>
+    <main class="content">
+      <label class="field">
+        <span>Song name</span>
+        <input id="import-name" type="text" autocomplete="off">
+      </label>
+
+      <h2>Tracks to include</h2>
+      <ul id="import-tracks" class="track-list"></ul>
+
+      <h2>When notes are played together (chords)</h2>
+      <div class="seg">
+        <label><input type="radio" name="chord" value="top" checked> Keep top note</label>
+        <label><input type="radio" name="chord" value="bottom"> Keep lowest note</label>
+      </div>
+
+      <p id="import-summary" class="muted"></p>
+      <button id="btn-import-save" class="btn primary block">Save song</button>
+    </main>
+  </section>
+
+</div>
+
+<!-- Libraries (pinned versions). VexFlow draws the staff; @tonejs/midi parses .mid files. -->
+<script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

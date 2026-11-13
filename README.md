@@ -1,0 +1,116 @@
+# Piano Wait Mode
+
+A tiny web app that teaches piano one note at a time. It shows a note on the staff,
+listens through your phone's microphone, and **waits until you play that note** before
+moving on. No installs, no build step: just `index.html`, `app.js` and `styles.css`.
+
+## Files
+
+| File | What it is |
+|---|---|
+| `index.html` | The page and its four screens (songs, play, settings, MIDI import) |
+| `app.js` | Everything else: pitch detection, MIDI import, storage, UI. Sections are numbered at the top. |
+| `styles.css` | Mobile-first styles. Colors and sizes are variables at the top. |
+| `test-pitch.js` | Optional offline test of the pitch detector with synthesized tones (`node test-pitch.js`) |
+
+VexFlow (staff drawing) and @tonejs/midi (MIDI parsing) load from the jsDelivr CDN at
+pinned versions, so the app needs an internet connection the first time it loads.
+
+## Host it on GitHub Pages (free, HTTPS)
+
+The microphone only works on **https://** pages, and GitHub Pages gives you that for free.
+
+1. Create a GitHub account if you don't have one, then click **New repository**.
+   Name it e.g. `piano-wait`, make it **Public**, and create it.
+2. Click **Add file → Upload files**, drag in `index.html`, `app.js`, `styles.css`
+   and `README.md`, then **Commit changes**. (Don't upload copyrighted MIDI files. You load
+   those on your phone instead, and they stay on your phone.)
+3. Go to **Settings → Pages**. Under *Build and deployment*, choose
+   **Source: Deploy from a branch**, **Branch: `main`**, folder **`/ (root)`**, then **Save**.
+4. Wait a minute and refresh. The page shows your address, like
+   `https://YOUR-NAME.github.io/piano-wait/`.
+
+To update later, upload the changed files again. Pages redeploys in about a minute.
+
+## Open it on iPhone
+
+1. Open the `https://…github.io/…` link in **Safari**.
+2. Pick a song, then tap **🎤 Start listening** and choose **Allow** for the microphone.
+3. Put the phone on the music stand near the keyboard's speakers and play the blue note.
+
+**Add it to the Home Screen** so it opens full-screen like an app:
+tap the **Share** button (square with an arrow) → **Add to Home Screen** → **Add**.
+
+> Keep using the Home Screen icon. Safari may delete a website's saved data after about
+> 7 days without a visit, but Home Screen apps are exempt, so your uploaded songs are safer there.
+> (Songs added in Safari and songs added from the Home Screen app are stored separately.)
+
+### If the microphone doesn't work
+
+- **"Microphone access is blocked"**: in Safari tap **aA** in the address bar →
+  **Website Settings → Microphone → Allow**, or open the **Settings app → Apps → Safari →
+  Microphone**. Then reload.
+- **Nothing is heard**: watch the level meter. If the bar never passes the red line, move
+  the noise gate down in **Settings**, or turn up the keyboard's volume.
+- **Random notes in a noisy room**: Settings → **Set noise gate from room noise**.
+- **Wrong octave**: keep **Accept any octave** ON (the default). Phone mics often hear piano notes an octave off.
+- **It stopped after a call or switching apps**: tap **▶ Tap to resume listening**.
+- The page must be `https://`. Opening `index.html` as a file won't allow the mic.
+
+## How to use
+
+- **Song list**: three public-domain starter songs plus a C-scale exercise. **Upload a MIDI
+  file** to add your own. Uploads are saved in the browser (IndexedDB) and can be renamed or deleted.
+- **MIDI import**: choose which tracks to include (drum tracks are unticked). Chords and
+  overlapping notes become single notes: keep the **top** note (default) or the **lowest**.
+  Timing is ignored. Only the order of notes matters.
+- **Play screen**: the big name is the note to play. The staff shows it in blue plus the next
+  four notes, on the treble or bass staff. **Skip** moves past a note, **Back** goes back one,
+  **Restart** starts over. The on-screen piano at the bottom works without the mic.
+- **Heard** shows what the mic detects (note, Hz, and how sharp/flat in cents) with a level meter.
+
+## Settings
+
+| Setting | Default | What it does |
+|---|---|---|
+| Accept any octave | On | Right note name in any octave counts |
+| Pitch tolerance | ±40 cents | How out-of-tune a note may be and still count |
+| Noise gate | −50 dB | Ignore sound quieter than this |
+| Hold time | 150 ms | How long a note must be steady before it counts |
+| Detection sensitivity | 0.15 | YIN threshold: higher catches more, but with more mistakes |
+| Treble / bass split | C4 | Notes from here up go on the treble staff |
+| Test mode | Off | On-screen keys play a synthesized tone *through the pitch detector* |
+
+**Self-test** (in Settings) runs the detector on synthesized piano-like tones from C2 to C7
+at 44.1 and 48 kHz and shows a pass/fail table, all without the mic.
+
+## How it works (for tweaking)
+
+- **Audio**: the mic goes through an `AudioWorklet` (or a `ScriptProcessor` on older browsers)
+  that sends 2048-sample frames every 1024 samples to the main thread.
+- **Pitch**: the [YIN algorithm](http://audition.ens.fr/adc/pdf/2002_JASA_YIN.pdf) (`yinDetect` in `app.js`)
+  with parabolic interpolation. Range is 50–2200 Hz (`TUNING.minFreq/maxFreq`).
+- **Matching** (`Matcher`): a note counts once it has been steady for the hold time. Holding the key
+  doesn't count twice. Playing the *same* note again (like "C C" in Twinkle) is recognized by
+  silence in between or by a jump in loudness from a fresh key press (`TUNING.onsetRatio`).
+- Low-level constants are in `TUNING` at the top of `app.js`. Defaults for the settings screen are in `DEFAULT_SETTINGS`.
+
+### Testing
+
+```bash
+node test-pitch.js
+```
+
+This checks detection on synthesized tones, the noise gate, the repeated-note logic, and chord
+collapsing. To try the app on your computer, serve the folder locally (the mic works on `localhost`):
+
+```bash
+python -m http.server 8000
+```
+
+then open http://localhost:8000.
+
+## Copyright note
+
+Only public-domain melodies are built in (Twinkle Twinkle, Mary Had a Little Lamb, Ode to Joy).
+Don't commit copyrighted songs or MIDI files to the repository. Upload them in the app, and they stay on your device.
