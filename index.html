@@ -47,6 +47,12 @@
       <button class="icon-btn bar-side" data-go="settings" aria-label="Settings">⚙︎</button>
     </header>
     <main class="content play">
+      <!-- Practise one hand at a time until it flows, then both -->
+      <div id="hand-picker" class="hand-picker" role="group" aria-label="Which hand to practise">
+        <button type="button" data-hand="L" aria-pressed="false">Left hand</button>
+        <button type="button" data-hand="R" aria-pressed="false">Right hand</button>
+        <button type="button" data-hand="both" aria-pressed="true">Both</button>
+      </div>
       <div id="target-card" class="card target">
         <div class="target-top">
           <span class="target-label">Play</span>
@@ -131,12 +137,13 @@
         <input id="import-name" type="text" autocomplete="off">
       </label>
 
-      <h2>Tracks to include</h2>
+      <h2>Tracks to include, and which hand plays each</h2>
       <ul id="import-tracks" class="track-list"></ul>
 
-      <h2>When notes are played together (chords)</h2>
+      <h2>When a hand plays several notes at once (chords)</h2>
       <div class="seg">
-        <label><input type="radio" name="chord" value="top" checked> Keep top note</label>
+        <label><input type="radio" name="chord" value="smart" checked> Right hand: top note · Left hand: lowest note</label>
+        <label><input type="radio" name="chord" value="top"> Keep top note</label>
         <label><input type="radio" name="chord" value="bottom"> Keep lowest note</label>
       </div>
 

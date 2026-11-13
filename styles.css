@@ -133,6 +133,17 @@ h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: v
 .song-actions { display: flex; align-items: center; gap: 4px; padding-right: 8px; }
 
 /* ---------- Play screen ---------- */
+.hand-picker {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
+  padding: 4px; margin-bottom: 12px;
+  background: var(--border); border-radius: 12px;
+}
+.hand-picker button {
+  min-height: 40px; border: 0; border-radius: 9px;
+  background: transparent; font-weight: 600; color: var(--muted);
+}
+.hand-picker button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+
 .target { text-align: center; padding-bottom: 10px; transition: background-color .2s; }
 .target-top { display: flex; justify-content: space-between; font-size: 14px; }
 .target-label { font-weight: 600; color: var(--muted); }
@@ -230,6 +241,8 @@ h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: v
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
 }
 .track-list input { width: 24px; height: 24px; flex: none; accent-color: var(--accent); }
+.track-info { flex: 1; min-width: 0; }
+.hand-select { flex: none; min-height: 40px; max-width: 42%; padding: 0 8px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); font-size: 16px; }
 .seg { display: grid; gap: 8px; }
 .seg label { display: flex; align-items: center; gap: 10px; min-height: var(--tap); padding: 0 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
 .seg input { width: 22px; height: 22px; accent-color: var(--accent); }

@@ -61,9 +61,14 @@ tap the **Share** button (square with an arrow) → **Add to Home Screen** → *
 
 - **Song list**: three public-domain starter songs plus a C-scale exercise. **Upload a MIDI
   file** to add your own. Uploads are saved in the browser (IndexedDB) and can be renamed or deleted.
-- **MIDI import**: choose which tracks to include (drum tracks are unticked). Chords and
-  overlapping notes become single notes: keep the **top** note (default) or the **lowest**.
+- **MIDI import**: choose which tracks to include (drum tracks are unticked) and which hand plays
+  each one. The app guesses: a single track is split at middle C, and with several tracks the
+  higher one is the right hand. Each hand's chords become single notes on their own. By default
+  the right hand keeps its top note (the melody) and the left hand keeps its lowest note (the bass).
   Timing is ignored. Only the order of notes matters.
+- **Left hand / Right hand / Both**: at the top of the play screen. Practise each hand on its own
+  until it flows, then try Both. Switching keeps your place in the song, and the app remembers
+  your choice for each song.
 - **Play screen**: the big name is the note to play. The staff shows it in blue plus the next
   four notes, on the treble or bass staff. **Skip** moves past a note, **Back** goes back one,
   **Restart** starts over. The on-screen piano at the bottom works without the mic.

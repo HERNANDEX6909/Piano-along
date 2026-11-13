@@ -64,10 +64,29 @@ for (const m of [40, 60, 69, 81]) {
   check(A.collapseToSequence(notes, 'bottom').join() === '60,62,48', 'collapse bottom: ' + A.collapseToSequence(notes, 'bottom'));
 }
 
-// 6) Built-in songs parsed.
-check(A.BUILTIN_SONGS.every(s => s.notes.length > 10 && s.notes.every(Number.isInteger)), 'built-in songs parse');
+// 6) Hands: each hand's chords collapse separately, so left-hand notes survive.
+{
+  const rh = { hand: 'R', notes: [{ midi: 64, time: 0 }, { midi: 67, time: 0 }, { midi: 65, time: 0.5 }, { midi: 64, time: 1 }] };
+  const lh = { hand: 'L', notes: [{ midi: 48, time: 0 }, { midi: 52, time: 0 }, { midi: 43, time: 1 }] };
+  const ev = A.buildHandEvents([rh, lh], 'smart', 60);
+  const str = ev.map(n => n.hand + A.midiToName(n.midi)).join(' ');
+  check(str === 'LC3 RG4 RF4 LG2 RE4', 'both hands, smart chords: ' + str);
+  const one = { hand: 'split', notes: [{ midi: 48, time: 0 }, { midi: 72, time: 0 }, { midi: 59, time: 1 }, { midi: 60, time: 2 }] };
+  const sp = A.buildHandEvents([one], 'smart', 60).map(n => n.hand + A.midiToName(n.midi)).join(' ');
+  check(sp === 'LC3 RC5 LB3 RC4', 'one track split by pitch: ' + sp);
+  const tracks = [{ notes: [{ midi: 72 }, { midi: 76 }] }, { notes: [{ midi: 40 }, { midi: 62 }] }];
+  check(A.guessTrackHand(tracks[0], tracks, 60) === 'R' && A.guessTrackHand(tracks[1], tracks, 60) === 'L', 'guess track hands by average pitch');
+  const song = { notes: ev };
+  check(A.notesForHand(song, 'L').map(n => n.midi).join() === '48,43', 'left hand only');
+  check(A.notesForHand(song, 'R').length === 3 && A.notesForHand(song, 'both').length === 5, 'right hand only / both');
+  check(A.notesForHand({ notes: [60, 48, 64] }, 'L').map(n => n.midi).join() === '48', 'old saved songs still work');
+}
 
-// 7) Speed: frames per second the detector can handle (needs ~47/s).
+// 7) Built-in songs parsed.
+check(A.BUILTIN_SONGS.every(s => s.notes.length > 10 && s.notes.every(n => Number.isInteger(n.midi) && 'RL'.includes(n.hand))), 'built-in songs parse');
+check(A.notesForHand(A.BUILTIN_SONGS[3], 'L').length === 15, 'scale exercise has 15 left-hand notes');
+
+// 8) Speed: frames per second the detector can handle (needs ~47/s).
 {
   const buf = A.synthTone(110, 48000, 2048);
   const t0 = Date.now(); let n = 0;

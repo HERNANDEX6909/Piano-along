@@ -216,10 +216,18 @@ const BUILTIN_SONGS = [
   },
   {
     id: 'builtin-scale', name: 'Exercise: C scale, right then left hand',
-    notes: 'C4 D4 E4 F4 G4 A4 B4 C5 B4 A4 G4 F4 E4 D4 C4 ' +
-           'C3 D3 E3 F3 G3 A3 B3 C4 B3 A3 G3 F3 E3 D3 C3'
+    notes: 'C4 D4 E4 F4 G4 A4 B4 C5 B4 A4 G4 F4 E4 D4 C4',
+    left:  'C3 D3 E3 F3 G3 A3 B3 C4 B3 A3 G3 F3 E3 D3 C3'
   }
-].map(s => ({ ...s, builtIn: true, notes: s.notes.trim().split(/\s+/).map(nameToMidi) }));
+].map(s => ({ id: s.id, name: s.name, builtIn: true, notes: builtinEvents(s) }));
+
+/** Built-in songs: `notes` is the right hand, optional `left` is played after it. */
+function builtinEvents(s) {
+  const toEvents = (str, hand, start) => str.trim().split(/\s+/)
+    .map((n, i) => ({ midi: nameToMidi(n), time: start + i, hand }));
+  const right = toEvents(s.notes, 'R', 0);
+  return s.left ? right.concat(toEvents(s.left, 'L', right.length)) : right;
+}
 
 /* ===================== 5. MIDI IMPORT ===================== */
 
@@ -240,25 +248,89 @@ function parseMidiFile(arrayBuffer) {
 }
 
 /**
- * Merge notes into ONE ordered sequence of single notes.
+ * Turn notes into a sequence of single notes, keeping each note's start time.
  * Notes that start within `windowSec` of each other count as a chord;
- * only the top (or lowest) note of each chord is kept. Timing is dropped.
+ * only the top (or lowest) note of each chord is kept.
  */
-function collapseToSequence(notes, mode = 'top', windowSec = TUNING.chordWindowSec) {
+function collapseEvents(notes, mode = 'top', windowSec = TUNING.chordWindowSec) {
   const sorted = notes.slice().sort((a, b) => a.time - b.time || a.midi - b.midi);
   const result = [];
-  let groupStart = -Infinity, pick = null;
+  let pick = null;
   for (const n of sorted) {
-    if (n.time - groupStart > windowSec) {
-      if (pick !== null) result.push(pick);
-      groupStart = n.time;
-      pick = n.midi;
-    } else {
-      pick = mode === 'bottom' ? Math.min(pick, n.midi) : Math.max(pick, n.midi);
+    if (!pick || n.time - pick.time > windowSec) {
+      if (pick) result.push(pick);
+      pick = { midi: n.midi, time: n.time };
+    } else if (mode === 'bottom' ? n.midi < pick.midi : n.midi > pick.midi) {
+      pick.midi = n.midi;
     }
   }
-  if (pick !== null) result.push(pick);
+  if (pick) result.push(pick);
   return result;
+}
+
+/** Same as collapseEvents, but just the MIDI numbers. */
+function collapseToSequence(notes, mode = 'top', windowSec = TUNING.chordWindowSec) {
+  return collapseEvents(notes, mode, windowSec).map(n => n.midi);
+}
+
+/**
+ * Guess which hand plays each track. One track → split it by pitch.
+ * Several tracks → each track goes to the hand that matches its average pitch.
+ */
+function guessTrackHand(track, tracks, split) {
+  if (tracks.filter(t => !t.isDrums).length < 2) return 'split';
+  const avg = track.notes.reduce((a, n) => a + n.midi, 0) / track.notes.length;
+  return avg >= split ? 'R' : 'L';
+}
+
+/**
+ * Build the song's notes with a hand for each: [{ midi, time, hand: 'R'|'L' }].
+ * Each hand's chords are collapsed on their own, so the left hand isn't lost
+ * under the right hand. chordMode 'smart' = right hand keeps its top note
+ * (the melody), left hand keeps its lowest note (the bass).
+ */
+function buildHandEvents(tracks, chordMode, split) {
+  const byHand = { R: [], L: [] };
+  for (const t of tracks) {
+    for (const n of t.notes) {
+      const hand = t.hand === 'split' ? (n.midi >= split ? 'R' : 'L') : t.hand;
+      byHand[hand].push(n);
+    }
+  }
+  const modeFor = hand => chordMode === 'smart' ? (hand === 'R' ? 'top' : 'bottom') : chordMode;
+  const events = [];
+  for (const hand of ['R', 'L']) {
+    collapseEvents(byHand[hand], modeFor(hand)).forEach(n => events.push({ midi: n.midi, time: n.time, hand }));
+  }
+  return orderEvents(events);
+}
+
+/** Sort by time; notes starting together (both hands) go lowest first. */
+function orderEvents(events, windowSec = TUNING.chordWindowSec) {
+  const sorted = events.slice().sort((a, b) => a.time - b.time);
+  const out = [];
+  for (let i = 0; i < sorted.length;) {
+    let j = i + 1;
+    while (j < sorted.length && sorted[j].time - sorted[i].time <= windowSec) j++;
+    out.push(...sorted.slice(i, j).sort((a, b) => a.midi - b.midi));
+    i = j;
+  }
+  return out;
+}
+
+/**
+ * A song's notes as [{ midi, time, hand }]. Songs saved by the first version
+ * of the app stored plain MIDI numbers; their hand is guessed from the clef split.
+ */
+function songEvents(song) {
+  return song.notes.map((n, i) => typeof n === 'number'
+    ? { midi: n, time: i, hand: n >= settings.clefSplit ? 'R' : 'L' }
+    : n);
+}
+
+/** The notes to play for a hand choice: 'R', 'L' or 'both'. */
+function notesForHand(song, hand) {
+  return songEvents(song).filter(n => hand === 'both' || n.hand === hand);
 }
 
 /* ===================== 6. STORAGE ===================== */
@@ -510,6 +582,9 @@ const Matcher = {
 const state = {
   songs: [],          // user songs from IndexedDB
   song: null,         // song being played
+  hand: 'both',       // which hand is practised: 'R', 'L' or 'both'
+  events: [],         // notes for that hand: [{ midi, time, hand }]
+  notes: [],          // just their MIDI numbers
   idx: 0,             // index of the current note
   screen: 'songs',
   prevScreen: 'songs',
@@ -527,12 +602,12 @@ function onStableNote(midi) {
 /** A note was played (by mic or on-screen key). Advance if it's right. */
 function handleNote(midi) {
   const song = state.song;
-  if (!song || state.idx >= song.notes.length) return;
-  const target = song.notes[state.idx];
+  if (!song || state.idx >= state.notes.length) return;
+  const target = state.notes[state.idx];
   const ok = settings.anyOctave ? midi % 12 === target % 12 : midi === target;
   if (ok) {
     state.idx++;
-    showFeedback('good', state.idx >= song.notes.length ? 'Song complete! 🎉' : `✓ ${midiToName(midi)}`);
+    showFeedback('good', state.idx >= state.notes.length ? 'Song complete! 🎉' : `✓ ${midiToName(midi)}`);
     renderPlay();
   } else {
     showFeedback('bad', `Heard ${midiToName(midi)} — try ${midiToName(target)}`);
@@ -548,16 +623,50 @@ function showFeedback(kind, text) {
   clearTimeout(state.feedbackTimer);
   state.feedbackTimer = setTimeout(() => {
     card.classList.remove('good', 'bad');
-    if (state.song && state.idx < state.song.notes.length) $('#feedback').textContent = '';
+    if (state.song && state.idx < state.notes.length) $('#feedback').textContent = '';
   }, TUNING.feedbackMs);
 }
 
 function startSong(song) {
   state.song = song;
   state.idx = 0;
+  setHand(loadSongHand(song), false);
   Matcher.reset();
   $('#feedback').textContent = '';
   show('play');
+}
+
+/**
+ * Switch which hand is practised. Keeps your place: jumps to the first note
+ * of the new hand that comes at or after the note you were on.
+ */
+function setHand(hand, keepPlace = true) {
+  const current = keepPlace && state.events[state.idx];
+  state.hand = hand;
+  state.events = notesForHand(state.song, hand);
+  state.notes = state.events.map(n => n.midi);
+  if (current) {
+    const i = state.events.findIndex(n => n.time >= current.time);
+    state.idx = i < 0 ? state.events.length : i;
+  } else if (!keepPlace) {
+    state.idx = 0;
+  }
+  saveSongHand(state.song, hand);
+  $$('#hand-picker button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.hand === hand)));
+}
+
+// Remember the last hand choice for each song on this device.
+const HANDS_KEY = 'piano-wait-mode.hands';
+function loadSongHand(song) {
+  try { return JSON.parse(localStorage.getItem(HANDS_KEY) || '{}')[song.id] || 'both'; }
+  catch (e) { return 'both'; }
+}
+function saveSongHand(song, hand) {
+  try {
+    const all = JSON.parse(localStorage.getItem(HANDS_KEY) || '{}');
+    all[song.id] = hand;
+    localStorage.setItem(HANDS_KEY, JSON.stringify(all));
+  } catch (e) { /* private mode etc. */ }
 }
 
 /* ===================== 10. RENDERING ===================== */
@@ -580,18 +689,23 @@ function el(tag, props = {}, ...children) {
 function renderPlay() {
   const song = state.song;
   if (!song) return;
-  const total = song.notes.length;
+  const total = state.notes.length;
   const done = state.idx >= total;
   $('#play-title').textContent = song.name;
   $('#progress-text').textContent = done ? `${total} of ${total} ✓` : `Note ${state.idx + 1} of ${total}`;
-  $('#progress-fill').style.width = (100 * state.idx / total) + '%';
-  if (done) {
+  $('#progress-fill').style.width = (total ? 100 * state.idx / total : 0) + '%';
+  if (!total) {
+    $('#progress-text').textContent = '0 notes';
+    $('#target-name').textContent = '—';
+    $('#target-hint').textContent = `This song has no ${state.hand === 'L' ? 'left' : 'right'}-hand notes. Pick another hand above.`;
+  } else if (done) {
     $('#target-name').textContent = '🎉';
     $('#target-hint').textContent = 'You finished the song! Tap Restart to play it again.';
   } else {
-    const t = song.notes[state.idx];
+    const t = state.notes[state.idx];
     $('#target-name').textContent = midiToName(t);
-    $('#target-hint').textContent = noteHint(t) + (t < settings.clefSplit ? ' · bass clef' : ' · treble clef');
+    const hand = state.events[state.idx].hand === 'L' ? 'left hand' : 'right hand';
+    $('#target-hint').textContent = `${noteHint(t)} · ${hand}`;
   }
   renderStaff();
   highlightTargetKey();
@@ -621,7 +735,7 @@ function renderStaff() {
   new VF.StaveConnector(treble, bass).setType('brace').setContext(ctx).draw();
   new VF.StaveConnector(treble, bass).setType('singleLeft').setContext(ctx).draw();
 
-  const upcoming = song.notes.slice(state.idx, state.idx + 1 + TUNING.lookahead);
+  const upcoming = state.notes.slice(state.idx, state.idx + 1 + TUNING.lookahead);
   if (!upcoming.length) return;
 
   const trebleNotes = [], bassNotes = [];
@@ -717,8 +831,8 @@ function playTone(midi, toSpeakers, toDetector, dur = 0.9) {
 function highlightTargetKey() {
   $$('.key.target').forEach(k => k.classList.remove('target'));
   const song = state.song;
-  if (!song || state.idx >= song.notes.length) return;
-  const m = song.notes[state.idx];
+  if (!song || state.idx >= state.notes.length) return;
+  const m = state.notes[state.idx];
   const key = $(`.key[data-midi="${m}"]`);
   if (!key) return;
   if (settings.keyboardHint) key.classList.add('target');
@@ -738,7 +852,7 @@ function meterLoop() {
   if (r) {
     $$('.level-fill').forEach(f => { f.style.width = pct(r.db) + '%'; f.classList.toggle('open', !r.gated); });
     const heard = !r.gated && r.midi !== null;
-    const target = state.song && state.song.notes[state.idx];
+    const target = state.song && state.notes[state.idx];
     const match = heard && target != null && (settings.anyOctave ? r.midi % 12 === target % 12 : r.midi === target);
     $$('[data-heard-name]').forEach(n => { n.textContent = heard ? midiToName(r.midi) : '—'; n.classList.toggle('match', match && r.voiced); });
     $$('[data-heard-freq]').forEach(n => { n.textContent = heard ? `${r.freq.toFixed(1)} Hz · ${r.cents > 0 ? '+' : ''}${r.cents}¢` : `${r.db.toFixed(0)} dB`; });
@@ -831,10 +945,12 @@ function show(name) {
 /* ---------- Song list ---------- */
 
 function songMeta(song) {
-  const n = song.notes.length;
-  if (!n) return 'empty';
-  const lo = Math.min(...song.notes), hi = Math.max(...song.notes);
-  return `${n} notes · ${midiToName(lo)}–${midiToName(hi)}`;
+  const events = songEvents(song);
+  if (!events.length) return 'empty';
+  const midis = events.map(n => n.midi);
+  const left = events.filter(n => n.hand === 'L').length;
+  const hands = left === 0 ? 'right hand' : left === events.length ? 'left hand' : 'both hands';
+  return `${events.length} notes · ${midiToName(Math.min(...midis))}–${midiToName(Math.max(...midis))} · ${hands}`;
 }
 
 function songItem(song) {
@@ -916,10 +1032,18 @@ function renderImport() {
     const lo = Math.min(...t.notes.map(n => n.midi)), hi = Math.max(...t.notes.map(n => n.midi));
     const box = el('input', { type: 'checkbox', checked: !t.isDrums, onchange: updateImportSummary });
     box.dataset.index = t.index;
+    // Which hand plays this track (guessed; you can change it).
+    const hand = el('select', { class: 'hand-select', onchange: updateImportSummary, 'aria-label': `Hand for ${t.name}` },
+      el('option', { value: 'R' }, 'Right hand'),
+      el('option', { value: 'L' }, 'Left hand'),
+      el('option', { value: 'split' }, `Split at ${midiToName(settings.clefSplit)}`));
+    hand.value = guessTrackHand(t, imp.tracks, settings.clefSplit);
+    hand.dataset.index = t.index;
     return el('li', {}, el('label', {}, box,
-      el('span', {},
+      el('span', { class: 'track-info' },
         el('span', { class: 'song-name' }, t.name + (t.isDrums ? ' (drums)' : '')),
-        el('span', { class: 'song-meta' }, `${t.notes.length} notes · ${midiToName(lo)}–${midiToName(hi)}`))));
+        el('span', { class: 'song-meta' }, `${t.notes.length} notes · ${midiToName(lo)}–${midiToName(hi)}`)),
+      hand));
   }));
   updateImportSummary();
 }
@@ -927,15 +1051,21 @@ function renderImport() {
 function buildImportSequence() {
   const imp = state.pendingImport;
   const chosen = new Set($$('#import-tracks input:checked').map(b => parseInt(b.dataset.index, 10)));
-  const notes = imp.tracks.filter(t => chosen.has(t.index)).flatMap(t => t.notes);
-  const mode = ($('input[name="chord"]:checked') || {}).value || 'top';
-  return { notes: collapseToSequence(notes, mode), mode, trackNames: imp.tracks.filter(t => chosen.has(t.index)).map(t => t.name) };
+  const handOf = i => ($(`#import-tracks select[data-index="${i}"]`) || {}).value || 'split';
+  const tracks = imp.tracks.filter(t => chosen.has(t.index)).map(t => ({ notes: t.notes, hand: handOf(t.index) }));
+  const mode = ($('input[name="chord"]:checked') || {}).value || 'smart';
+  return {
+    notes: buildHandEvents(tracks, mode, settings.clefSplit),
+    mode,
+    trackNames: imp.tracks.filter(t => chosen.has(t.index)).map(t => t.name)
+  };
 }
 
 function updateImportSummary() {
   const { notes } = buildImportSequence();
+  const left = notes.filter(n => n.hand === 'L').length;
   $('#import-summary').textContent = notes.length
-    ? `This makes a sequence of ${notes.length} single notes.`
+    ? `This makes ${notes.length - left} right-hand and ${left} left-hand notes.`
     : 'Pick at least one track with notes.';
   $('#btn-import-save').disabled = !notes.length;
 }
@@ -1062,9 +1192,17 @@ function init() {
   $('#btn-import-save').addEventListener('click', saveImport);
   $$('input[name="chord"]').forEach(r => r.addEventListener('change', updateImportSummary));
 
+  $('#hand-picker').addEventListener('click', e => {
+    const b = e.target.closest('button[data-hand]');
+    if (!b || !state.song || b.dataset.hand === state.hand) return;
+    setHand(b.dataset.hand);
+    Matcher.reset();
+    $('#feedback').textContent = '';
+    renderPlay();
+  });
   $('#btn-restart').addEventListener('click', () => { state.idx = 0; Matcher.reset(); $('#feedback').textContent = ''; renderPlay(); });
   $('#btn-skip').addEventListener('click', () => {
-    if (state.song && state.idx < state.song.notes.length) { state.idx++; $('#feedback').textContent = ''; renderPlay(); }
+    if (state.song && state.idx < state.notes.length) { state.idx++; $('#feedback').textContent = ''; renderPlay(); }
   });
   $('#btn-prev').addEventListener('click', () => {
     if (state.idx > 0) { state.idx--; $('#feedback').textContent = ''; renderPlay(); }
@@ -1114,6 +1252,7 @@ if (typeof document !== 'undefined') {
 
 // Allow unit tests in Node: `node test-pitch.js`
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { yinDetect, analyzeFrame, synthTone, runPitchSelfTest, collapseToSequence,
+  module.exports = { yinDetect, analyzeFrame, synthTone, runPitchSelfTest, collapseToSequence, collapseEvents,
+    buildHandEvents, guessTrackHand, notesForHand,
     midiToName, nameToMidi, midiToFreq, Matcher, DEFAULT_SETTINGS, TUNING, BUILTIN_SONGS };
 }
