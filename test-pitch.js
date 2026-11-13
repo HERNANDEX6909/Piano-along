@@ -86,7 +86,20 @@ for (const m of [40, 60, 69, 81]) {
 check(A.BUILTIN_SONGS.every(s => s.notes.length > 10 && s.notes.every(n => Number.isInteger(n.midi) && 'RL'.includes(n.hand))), 'built-in songs parse');
 check(A.notesForHand(A.BUILTIN_SONGS[3], 'L').length === 15, 'scale exercise has 15 left-hand notes');
 
-// 8) Speed: frames per second the detector can handle (needs ~47/s).
+// 8) Rhythm for "Hear it".
+{
+  const tw = A.BUILTIN_SONGS[0].notes; // 100 bpm → 0.6 s per beat
+  check(Math.abs(tw[6].dur - 1.2) < 1e-9 && Math.abs(tw[7].time - 4.8) < 1e-9, 'Twinkle: "G4:2" is a half note, next note starts on beat 9');
+  const ph = A.phraseFrom(tw, 0);
+  check(ph.length === 8 && ph[0].at === 0 && Math.abs(ph[7].at - 4.8) < 1e-9, 'phrase: 8 notes at real timing');
+  const rests = [{ midi: 60, time: 0, dur: 0.5 }, { midi: 62, time: 10, dur: 0.5 }, { midi: 64, time: 10.5 }];
+  const pr = A.phraseFrom(rests, 0);
+  check(pr[1].at === A.TUNING.hearMaxGapSec && pr[2].dur === 0.6, 'long rests shortened; missing length gets a default');
+  const ev = A.buildHandEvents([{ hand: 'R', notes: [{ midi: 60, time: 0, dur: 0.25 }, { midi: 64, time: 0, dur: 0.75 }] }], 'top', 60);
+  check(ev[0].dur === 0.75, 'chord keeps the length of the kept note');
+}
+
+// 9) Speed: frames per second the detector can handle (needs ~47/s).
 {
   const buf = A.synthTone(110, 48000, 2048);
   const t0 = Date.now(); let n = 0;

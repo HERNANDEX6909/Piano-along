@@ -66,6 +66,9 @@
 
       <div id="staff" class="staff" aria-label="Upcoming notes on the staff"></div>
 
+      <!-- Plays the next few notes at the song's real speed so you know how they should sound -->
+      <button id="btn-hear" class="btn block hear-btn">🔊 Hear it</button>
+
       <div class="controls">
         <button id="btn-restart" class="btn">↺ Restart</button>
         <button id="btn-prev" class="btn">‹ Back</button>
@@ -90,7 +93,11 @@
       </div>
     </main>
     <!-- On-screen piano (works without the mic) -->
-    <div class="kb-wrap" id="kb-wrap"><div id="keyboard" class="kb"></div></div>
+    <!-- Falling notes (canvas) + on-screen piano. They scroll sideways together. -->
+    <div class="kb-wrap" id="kb-wrap">
+      <canvas id="roll" class="roll" aria-hidden="true"></canvas>
+      <div id="keyboard" class="kb"></div>
+    </div>
   </section>
 
   <!-- ===================== SETTINGS ===================== -->

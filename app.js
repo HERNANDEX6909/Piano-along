@@ -31,7 +31,9 @@ const DEFAULT_SETTINGS = {
   clefSplit: 60,            // MIDI note: this and above go on the treble staff (60 = middle C)
   keyboardHint: true,       // highlight the target key on the on-screen piano
   tapSound: true,           // on-screen keys play a short tone
-  tapThroughDetector: false // on-screen keys are fed to the pitch detector (test mode)
+  tapThroughDetector: false,// on-screen keys are fed to the pitch detector (test mode)
+  playbackSpeed: 1,         // "Hear it" speed: 1 = the song's real speed, 0.5 = half speed
+  sheetMusic: false         // show sheet music instead of falling notes
 };
 
 // Lower-level tuning. Change these if you know what you're doing.
@@ -46,7 +48,15 @@ const TUNING = {
   lookahead: 4,        // upcoming notes drawn after the current one
   chordWindowSec: 0.03,// MIDI notes starting within 30 ms are treated as one chord
   kbLow: 36,           // on-screen piano range: C2 …
-  kbHigh: 96           // … C7
+  kbHigh: 96,          // … C7
+  hearNotes: 8,        // "Hear it" plays up to this many notes …
+  hearMaxSec: 6,       // … or this many seconds, whichever comes first
+  hearMaxGapSec: 1.5,  // long rests are shortened to this
+  hearMuteTailMs: 400, // keep ignoring the mic this long after playback (echo)
+  minWhiteKey: 18,     // on-screen piano: keys shrink to fit the song, down to this width (px) …
+  maxWhiteKey: 44,     // … and are at most this wide
+  rollPxPerSec: 80,    // falling notes: pixels per second of song (higher = more spread out)
+  handColors: { R: '#3b82f6', L: '#f59e0b' } // falling-note colors: right hand blue, left hand orange
 };
 
 /* ===================== 2. NOTE HELPERS ===================== */
@@ -195,38 +205,49 @@ function runPitchSelfTest(s) {
 
 /* ===================== 4. BUILT-IN SONGS (public domain) ===================== */
 
+// Each note is "NAME" (1 beat) or "NAME:beats", e.g. "G4:2" is a half note,
+// "E4:1.5" a dotted quarter. bpm = beats per minute (used by "Hear it").
 const BUILTIN_SONGS = [
   {
-    id: 'builtin-twinkle', name: 'Twinkle Twinkle Little Star',
-    notes: 'C4 C4 G4 G4 A4 A4 G4 F4 F4 E4 E4 D4 D4 C4 ' +
-           'G4 G4 F4 F4 E4 E4 D4 G4 G4 F4 F4 E4 E4 D4 ' +
-           'C4 C4 G4 G4 A4 A4 G4 F4 F4 E4 E4 D4 D4 C4'
+    id: 'builtin-twinkle', name: 'Twinkle Twinkle Little Star', bpm: 100,
+    notes: 'C4 C4 G4 G4 A4 A4 G4:2 F4 F4 E4 E4 D4 D4 C4:2 ' +
+           'G4 G4 F4 F4 E4 E4 D4:2 G4 G4 F4 F4 E4 E4 D4:2 ' +
+           'C4 C4 G4 G4 A4 A4 G4:2 F4 F4 E4 E4 D4 D4 C4:2'
   },
   {
-    id: 'builtin-mary', name: 'Mary Had a Little Lamb',
-    notes: 'E4 D4 C4 D4 E4 E4 E4 D4 D4 D4 E4 G4 G4 ' +
-           'E4 D4 C4 D4 E4 E4 E4 E4 D4 D4 E4 D4 C4'
+    id: 'builtin-mary', name: 'Mary Had a Little Lamb', bpm: 110,
+    notes: 'E4:1.5 D4:0.5 C4 D4 E4 E4 E4:2 D4 D4 D4:2 E4 G4 G4:2 ' +
+           'E4:1.5 D4:0.5 C4 D4 E4 E4 E4 E4 D4 D4 E4 D4 C4:4'
   },
   {
-    id: 'builtin-ode', name: 'Ode to Joy (Beethoven)',
-    notes: 'E4 E4 F4 G4 G4 F4 E4 D4 C4 C4 D4 E4 E4 D4 D4 ' +
-           'E4 E4 F4 G4 G4 F4 E4 D4 C4 C4 D4 E4 D4 C4 C4 ' +
-           'D4 D4 E4 C4 D4 E4 F4 E4 C4 D4 E4 F4 E4 D4 C4 D4 G3 ' +
-           'E4 E4 F4 G4 G4 F4 E4 D4 C4 C4 D4 E4 D4 C4 C4'
+    id: 'builtin-ode', name: 'Ode to Joy (Beethoven)', bpm: 100,
+    notes: 'E4 E4 F4 G4 G4 F4 E4 D4 C4 C4 D4 E4 E4:1.5 D4:0.5 D4:2 ' +
+           'E4 E4 F4 G4 G4 F4 E4 D4 C4 C4 D4 E4 D4:1.5 C4:0.5 C4:2 ' +
+           'D4 D4 E4 C4 D4 E4:0.5 F4:0.5 E4 C4 D4 E4:0.5 F4:0.5 E4 D4 C4 D4 G3:2 ' +
+           'E4 E4 F4 G4 G4 F4 E4 D4 C4 C4 D4 E4 D4:1.5 C4:0.5 C4:2'
   },
   {
-    id: 'builtin-scale', name: 'Exercise: C scale, right then left hand',
-    notes: 'C4 D4 E4 F4 G4 A4 B4 C5 B4 A4 G4 F4 E4 D4 C4',
-    left:  'C3 D3 E3 F3 G3 A3 B3 C4 B3 A3 G3 F3 E3 D3 C3'
+    id: 'builtin-scale', name: 'Exercise: C scale, right then left hand', bpm: 90,
+    notes: 'C4 D4 E4 F4 G4 A4 B4 C5 B4 A4 G4 F4 E4 D4 C4:2',
+    left:  'C3 D3 E3 F3 G3 A3 B3 C4 B3 A3 G3 F3 E3 D3 C3:2'
   }
 ].map(s => ({ id: s.id, name: s.name, builtIn: true, notes: builtinEvents(s) }));
 
-/** Built-in songs: `notes` is the right hand, optional `left` is played after it. */
+/**
+ * Built-in songs → [{ midi, time, dur, hand }] with times in seconds.
+ * `notes` is the right hand; optional `left` is played after it.
+ */
 function builtinEvents(s) {
-  const toEvents = (str, hand, start) => str.trim().split(/\s+/)
-    .map((n, i) => ({ midi: nameToMidi(n), time: start + i, hand }));
-  const right = toEvents(s.notes, 'R', 0);
-  return s.left ? right.concat(toEvents(s.left, 'L', right.length)) : right;
+  const secPerBeat = 60 / (s.bpm || 100);
+  let beat = 0;
+  const toEvents = (str, hand) => str.trim().split(/\s+/).map(token => {
+    const [name, beats = '1'] = token.split(':');
+    const ev = { midi: nameToMidi(name), time: beat * secPerBeat, dur: parseFloat(beats) * secPerBeat, hand };
+    beat += parseFloat(beats);
+    return ev;
+  });
+  const right = toEvents(s.notes, 'R');
+  return s.left ? right.concat(toEvents(s.left, 'L')) : right;
 }
 
 /* ===================== 5. MIDI IMPORT ===================== */
@@ -242,7 +263,7 @@ function parseMidiFile(arrayBuffer) {
       index: i,
       name: t.name || (t.instrument && t.instrument.name) || `Track ${i + 1}`,
       isDrums: !!(t.instrument && t.instrument.percussion) || t.channel === 9,
-      notes: t.notes.map(n => ({ midi: n.midi, time: n.time }))
+      notes: t.notes.map(n => ({ midi: n.midi, time: n.time, dur: n.duration }))
     }))
     .filter(t => t.notes.length > 0);
 }
@@ -259,9 +280,10 @@ function collapseEvents(notes, mode = 'top', windowSec = TUNING.chordWindowSec) 
   for (const n of sorted) {
     if (!pick || n.time - pick.time > windowSec) {
       if (pick) result.push(pick);
-      pick = { midi: n.midi, time: n.time };
+      pick = { midi: n.midi, time: n.time, dur: n.dur };
     } else if (mode === 'bottom' ? n.midi < pick.midi : n.midi > pick.midi) {
       pick.midi = n.midi;
+      pick.dur = n.dur;
     }
   }
   if (pick) result.push(pick);
@@ -300,7 +322,7 @@ function buildHandEvents(tracks, chordMode, split) {
   const modeFor = hand => chordMode === 'smart' ? (hand === 'R' ? 'top' : 'bottom') : chordMode;
   const events = [];
   for (const hand of ['R', 'L']) {
-    collapseEvents(byHand[hand], modeFor(hand)).forEach(n => events.push({ midi: n.midi, time: n.time, hand }));
+    collapseEvents(byHand[hand], modeFor(hand)).forEach(n => events.push({ midi: n.midi, time: n.time, dur: n.dur, hand }));
   }
   return orderEvents(events);
 }
@@ -319,12 +341,13 @@ function orderEvents(events, windowSec = TUNING.chordWindowSec) {
 }
 
 /**
- * A song's notes as [{ midi, time, hand }]. Songs saved by the first version
- * of the app stored plain MIDI numbers; their hand is guessed from the clef split.
+ * A song's notes as [{ midi, time, dur, hand }] (seconds). Songs saved by the first
+ * version of the app stored plain MIDI numbers: their hand is guessed from the clef
+ * split and they get an even half-second per note. `dur` may be missing on older saves.
  */
 function songEvents(song) {
   return song.notes.map((n, i) => typeof n === 'number'
-    ? { midi: n, time: i, hand: n >= settings.clefSplit ? 'R' : 'L' }
+    ? { midi: n, time: i * 0.5, hand: n >= settings.clefSplit ? 'R' : 'L' }
     : n);
 }
 
@@ -521,6 +544,9 @@ function onFrame(buf, sampleRate) {
   const res = analyzeFrame(buf, sampleRate, settings);
   state.latest = res;
   if (state.calibration) state.calibration.push(res.db);
+  // While "Hear it" is playing, the mic would hear the phone's own speaker
+  // and could advance the song by itself, so note matching pauses.
+  if (performance.now() < state.muteUntil) return;
   Matcher.update(res, performance.now());
 }
 
@@ -592,6 +618,8 @@ const state = {
   pendingImport: null,
   calibration: null,
   feedbackTimer: 0,
+  phrase: null,       // "Hear it" playback in progress
+  muteUntil: 0,       // ignore the mic until this time (performance.now())
   wakeLock: null
 };
 
@@ -630,6 +658,7 @@ function showFeedback(kind, text) {
 function startSong(song) {
   state.song = song;
   state.idx = 0;
+  Roll.jump = true;
   setHand(loadSongHand(song), false);
   Matcher.reset();
   $('#feedback').textContent = '';
@@ -641,6 +670,7 @@ function startSong(song) {
  * of the new hand that comes at or after the note you were on.
  */
 function setHand(hand, keepPlace = true) {
+  stopPhrase();
   const current = keepPlace && state.events[state.idx];
   state.hand = hand;
   state.events = notesForHand(state.song, hand);
@@ -705,9 +735,12 @@ function renderPlay() {
     const t = state.notes[state.idx];
     $('#target-name').textContent = midiToName(t);
     const hand = state.events[state.idx].hand === 'L' ? 'left hand' : 'right hand';
-    $('#target-hint').textContent = `${noteHint(t)} · ${hand}`;
+    const dot = el('span', { class: 'hand-dot' });
+    dot.style.background = TUNING.handColors[state.events[state.idx].hand];
+    $('#target-hint').replaceChildren(`${noteHint(t)} · `, dot, hand);
   }
-  renderStaff();
+  if (settings.sheetMusic) renderStaff();
+  Roll.dirty = true;
   highlightTargetKey();
 }
 
@@ -767,10 +800,6 @@ function renderStaff() {
 /** Build the on-screen piano once. */
 function buildKeyboard() {
   const kb = $('#keyboard');
-  const css = getComputedStyle(document.documentElement);
-  const W = parseFloat(css.getPropertyValue('--white-w')) || 44;
-  const B = parseFloat(css.getPropertyValue('--black-w')) || 28;
-  let whiteIndex = 0;
   for (let m = TUNING.kbLow; m <= TUNING.kbHigh; m++) {
     const black = isBlackKey(m);
     const key = el('button', {
@@ -779,15 +808,10 @@ function buildKeyboard() {
       type: 'button'
     });
     key.dataset.midi = m;
-    if (black) key.style.left = (whiteIndex * W - B / 2) + 'px';
-    else {
-      key.style.left = (whiteIndex * W) + 'px';
-      if (m % 12 === 0) key.textContent = midiToName(m);
-      whiteIndex++;
-    }
+    if (!black && m % 12 === 0) key.textContent = midiToName(m);
     kb.append(key);
   }
-  kb.style.width = (whiteIndex * W) + 'px';
+  layoutKeyboard(parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--white-w')) || 44);
   // "click" (not pointerdown) so swiping to scroll the keyboard doesn't play notes.
   kb.addEventListener('click', e => {
     const key = e.target.closest('.key');
@@ -813,19 +837,285 @@ function onKeyTap(midi, keyEl) {
 /** Short synthesized tone for on-screen keys (and detector testing). */
 function playTone(midi, toSpeakers, toDetector, dur = 0.9) {
   const ctx = Engine.ctx;
-  const t = ctx.currentTime;
-  const osc = ctx.createOscillator();
-  osc.type = 'triangle';
-  osc.frequency.value = midiToFreq(midi);
+  const outputs = [];
+  if (toSpeakers) outputs.push(ctx.destination);
+  if (toDetector) outputs.push(Engine.inputBus);
+  scheduleNote(midi, ctx.currentTime, dur, outputs);
+}
+
+/**
+ * Simple piano-like voice: a triangle wave plus a quieter octave above,
+ * with a fast attack and a decay. Returns the oscillators so they can be stopped.
+ */
+function scheduleNote(midi, when, dur, outputs, volume = 0.35) {
+  const ctx = Engine.ctx;
   const g = ctx.createGain();
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(0.35, t + 0.01);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  osc.connect(g);
-  if (toSpeakers) g.connect(ctx.destination);
-  if (toDetector) g.connect(Engine.inputBus);
-  osc.start(t);
-  osc.stop(t + dur + 0.05);
+  g.gain.setValueAtTime(0.0001, when);
+  g.gain.exponentialRampToValueAtTime(volume, when + 0.01);
+  g.gain.exponentialRampToValueAtTime(volume * 0.4, when + Math.min(0.3, dur));
+  g.gain.exponentialRampToValueAtTime(0.0001, when + dur + 0.15);
+  outputs.forEach(o => g.connect(o));
+  const oscs = [['triangle', 1, 1], ['sine', 2, 0.3]].map(([type, mult, level]) => {
+    const osc = ctx.createOscillator();
+    osc.type = type;
+    osc.frequency.value = midiToFreq(midi) * mult;
+    const lg = ctx.createGain();
+    lg.gain.value = level;
+    osc.connect(lg).connect(g);
+    osc.start(when);
+    osc.stop(when + dur + 0.2);
+    return osc;
+  });
+  return oscs;
+}
+
+/* ---------- "Hear it": play the next few notes at the song's real speed ---------- */
+
+/**
+ * Pick the phrase to play: from the current note, up to TUNING.hearNotes notes
+ * and TUNING.hearMaxSec seconds. Long rests are shortened so you're not left waiting.
+ * Returns [{ midi, at, dur, idx }] with `at` in seconds from the start (before speed).
+ */
+function phraseFrom(events, idx) {
+  const out = [];
+  let at = 0;
+  for (let i = idx; i < events.length && out.length < TUNING.hearNotes; i++) {
+    const n = events[i];
+    if (i > idx) at += Math.min(n.time - events[i - 1].time, TUNING.hearMaxGapSec);
+    if (out.length && at > TUNING.hearMaxSec) break;
+    const next = events[i + 1];
+    const fallback = next ? Math.max(0.15, next.time - n.time) : 0.6;
+    out.push({ midi: n.midi, at, dur: Math.min(n.dur || fallback, 2), idx: i });
+  }
+  return out;
+}
+
+function hearPhrase() {
+  if (state.phrase) { stopPhrase(); return; }
+  if (!state.song || state.idx >= state.events.length) return;
+  try { Engine.ensureContext(); } catch (e) { return; }
+  const ctx = Engine.ctx;
+  const speed = settings.playbackSpeed;
+  const start = ctx.currentTime + 0.08;
+  const notes = phraseFrom(state.events, state.idx);
+  // start/speed/notes let the falling notes move in time with the sound.
+  const phrase = { oscs: [], timers: [], start, speed, notes };
+  for (const n of notes) {
+    const when = start + n.at / speed;
+    phrase.oscs.push(...scheduleNote(n.midi, when, n.dur / speed, [ctx.destination], 0.3));
+    // Light up each key on the on-screen piano as it plays.
+    phrase.timers.push(setTimeout(() => flashKey(n.midi, Math.max(150, n.dur / speed * 1000)), (when - ctx.currentTime) * 1000));
+  }
+  const last = notes[notes.length - 1];
+  const totalMs = ((last.at + last.dur) / speed + 0.3) * 1000;
+  phrase.timers.push(setTimeout(stopPhrase, totalMs));
+  state.phrase = phrase;
+  state.muteUntil = performance.now() + totalMs + TUNING.hearMuteTailMs;
+  Matcher.reset();
+  $('#btn-hear').textContent = '■ Stop';
+}
+
+function stopPhrase() {
+  const p = state.phrase;
+  if (!p) return;
+  state.phrase = null;
+  p.timers.forEach(clearTimeout);
+  p.oscs.forEach(o => { try { o.stop(); } catch (e) { /* already stopped */ } });
+  $$('.key.playing').forEach(k => k.classList.remove('playing'));
+  state.muteUntil = Math.min(state.muteUntil, performance.now() + TUNING.hearMuteTailMs);
+  Matcher.reset();
+  $('#btn-hear').textContent = '🔊 Hear it';
+}
+
+function flashKey(midi, ms) {
+  const key = $(`.key[data-midi="${midi}"]`);
+  if (!key) return;
+  // Lit for 80% of the note, so the same note played twice blinks twice.
+  clearTimeout(key._flashTimer);
+  key.classList.add('playing');
+  key._flashTimer = setTimeout(() => key.classList.remove('playing'), ms * 0.8);
+}
+
+/* ---------- Falling notes ---------- */
+
+/** How long to draw a note: its real length, or the gap to the next note if unknown. */
+function noteLength(events, i) {
+  const n = events[i], next = events[i + 1];
+  const fallback = next ? Math.max(0.15, next.time - n.time) : 0.6;
+  return Math.min(n.dur || fallback, 4);
+}
+
+/**
+ * Notes fall down a lane above each key. The note to play sits on the line
+ * just above the keyboard and waits there; when you play it, everything
+ * slides down so the next note lands on the line. During "Hear it" the notes
+ * fall in real time, reaching the line as each one sounds.
+ */
+const Roll = {
+  canvas: null, ctx: null, keyPos: {}, w: 0, h: 0,
+  display: 0,      // song time (seconds) currently drawn at the line
+  jump: false,     // snap instead of animating (new song)
+  dirty: true, raf: 0, lastFrame: 0,
+
+  /** Show the lane (play screen, falling-notes view). */
+  show() {
+    if (settings.sheetMusic) return;
+    this.measure();
+    this.start();
+  },
+
+  /** Size the canvas to the keyboard and record where each key is. */
+  measure() {
+    this.canvas = this.canvas || $('#roll');
+    this.ctx = this.ctx || this.canvas.getContext('2d');
+    this.keyPos = {};
+    $$('.key').forEach(k => {
+      this.keyPos[k.dataset.midi] = { x: k.offsetLeft, w: k.offsetWidth, black: k.classList.contains('black') };
+    });
+    const w = $('#keyboard').offsetWidth, h = this.canvas.clientHeight;
+    if (!w || !h) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2); // capped to keep the canvas small on iPhone
+    this.canvas.style.width = w + 'px';
+    this.canvas.width = Math.round(w * dpr);
+    this.canvas.height = Math.round(h * dpr);
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.w = w;
+    this.h = h;
+    this.dirty = true;
+  },
+
+  start() {
+    if (this.raf) return;
+    this.lastFrame = performance.now();
+    this.raf = requestAnimationFrame(t => this.frame(t));
+  },
+
+  frame(now) {
+    this.raf = 0;
+    if (state.screen !== 'play' || settings.sheetMusic) return;
+    const dt = Math.min(0.1, (now - this.lastFrame) / 1000);
+    this.lastFrame = now;
+    const target = this.targetTime();
+    const before = this.display;
+    if (this.jump || state.phrase) { this.display = target; this.jump = false; }
+    else this.display += (target - this.display) * Math.min(1, dt * 9); // ease toward the next note
+    if (Math.abs(target - this.display) < 0.002) this.display = target;
+    if (this.dirty || this.display !== before) { this.draw(); this.dirty = false; }
+    this.raf = requestAnimationFrame(t => this.frame(t));
+  },
+
+  /** The song time that should be at the line right now. */
+  targetTime() {
+    const ev = state.events;
+    if (!ev.length) return 0;
+    const p = state.phrase;
+    if (p && Engine.ctx) {
+      // Follow the sound: map playback time back to song time, note by note
+      // (phraseFrom may have shortened long rests).
+      const at = (Engine.ctx.currentTime - p.start) * p.speed;
+      const ns = p.notes;
+      if (at <= 0) return ev[ns[0].idx].time;
+      for (let k = 0; k < ns.length - 1; k++) {
+        if (at < ns[k + 1].at) {
+          const a = ns[k], b = ns[k + 1];
+          const f = (at - a.at) / ((b.at - a.at) || 1);
+          return ev[a.idx].time + f * (ev[b.idx].time - ev[a.idx].time);
+        }
+      }
+      const last = ns[ns.length - 1];
+      return ev[last.idx].time + (at - last.at);
+    }
+    if (state.idx >= ev.length) return ev[ev.length - 1].time + noteLength(ev, ev.length - 1) + 0.5;
+    return ev[state.idx].time;
+  },
+
+  draw() {
+    const c = this.ctx, W = this.w, H = this.h, pps = TUNING.rollPxPerSec;
+    if (!c || !W) return;
+    c.fillStyle = '#15171d';
+    c.fillRect(0, 0, W, H);
+    // Lanes: darker strips over black keys, faint lines between white keys, brighter at each C.
+    for (const [m, k] of Object.entries(this.keyPos)) {
+      if (k.black) { c.fillStyle = '#0f1014'; c.fillRect(k.x, 0, k.w, H); }
+      else { c.fillStyle = Number(m) % 12 === 0 ? 'rgba(255,255,255,.16)' : 'rgba(255,255,255,.05)'; c.fillRect(k.x, 0, 1, H); }
+    }
+
+    const ev = state.events;
+    c.font = 'bold 11px -apple-system, BlinkMacSystemFont, sans-serif';
+    c.textAlign = 'center';
+    c.textBaseline = 'bottom';
+    for (let i = Math.max(0, state.idx - 6); i < ev.length; i++) {
+      const n = ev[i];
+      const bottom = H - (n.time - this.display) * pps;
+      if (bottom < -40) break;              // above the top edge: the rest are later still
+      const len = Math.max(16, noteLength(ev, i) * pps - 3);
+      const top = bottom - len;
+      const k = this.keyPos[n.midi];
+      if (!k || top > H) continue;
+      const current = i === state.idx;
+      const pad = k.black ? 1 : 3;
+      const x = k.x + pad, w = k.w - pad * 2;
+      c.globalAlpha = i < state.idx ? 0.3 : current ? 1 : 0.75;
+      c.fillStyle = TUNING.handColors[n.hand] || TUNING.handColors.R;
+      if (current) { c.shadowColor = c.fillStyle; c.shadowBlur = 14; }
+      roundRect(c, x, top, w, len, 5);
+      c.fill();
+      c.shadowBlur = 0;
+      if (current) { c.lineWidth = 2; c.strokeStyle = '#fff'; c.stroke(); }
+      if (len >= 18 && k.w >= 18) {
+        c.fillStyle = n.hand === 'L' ? '#1b1206' : '#fff';
+        c.fillText(midiToName(n.midi), k.x + k.w / 2, bottom - 4);
+      }
+    }
+    c.globalAlpha = 1;
+    // The line notes land on (top of the keyboard).
+    c.fillStyle = 'rgba(255,255,255,.55)';
+    c.fillRect(0, H - 2, W, 2);
+  }
+};
+
+/** Rounded rectangle path (falls back to a plain one on older Safari). */
+function roundRect(c, x, y, w, h, r) {
+  c.beginPath();
+  if (c.roundRect) c.roundRect(x, y, w, h, Math.min(r, w / 2, h / 2));
+  else c.rect(x, y, w, h);
+}
+
+/** Position the keys for a given white-key width (black keys are ~64% as wide). */
+function layoutKeyboard(W) {
+  const kb = $('#keyboard');
+  const B = Math.round(W * 0.64);
+  kb.style.setProperty('--white-w', W + 'px');
+  kb.style.setProperty('--black-w', B + 'px');
+  let whiteIndex = 0;
+  for (const key of kb.children) {
+    if (key.classList.contains('black')) key.style.left = (whiteIndex * W - B / 2) + 'px';
+    else { key.style.left = (whiteIndex * W) + 'px'; whiteIndex++; }
+  }
+  kb.style.width = (whiteIndex * W) + 'px';
+}
+
+/**
+ * Shrink the keys so the whole song (both hands) fits on screen, so notes
+ * never fall onto keys you can't see. Keys never get narrower than
+ * TUNING.minWhiteKey; very wide songs still scroll.
+ */
+function fitKeyboardToSong() {
+  const wrap = $('#kb-wrap');
+  const midis = state.song ? songEvents(state.song).map(n => n.midi) : [];
+  if (!midis.length || !wrap.clientWidth) return;
+  // Song range, widened to white keys at both ends.
+  let lo = Math.max(TUNING.kbLow, Math.min(...midis)), hi = Math.min(TUNING.kbHigh, Math.max(...midis));
+  if (isBlackKey(lo)) lo--;
+  if (isBlackKey(hi)) hi++;
+  let whites = 0;
+  for (let m = lo; m <= hi; m++) if (!isBlackKey(m)) whites++;
+  const W = Math.max(TUNING.minWhiteKey, Math.min(TUNING.maxWhiteKey, Math.floor(wrap.clientWidth / whites)));
+  layoutKeyboard(W);
+  Roll.measure();
+  // Centre the song's range.
+  const loKey = $(`.key[data-midi="${lo}"]`);
+  wrap.scrollLeft = Math.max(0, loKey.offsetLeft + (whites * W - wrap.clientWidth) / 2);
 }
 
 function highlightTargetKey() {
@@ -836,9 +1126,13 @@ function highlightTargetKey() {
   const key = $(`.key[data-midi="${m}"]`);
   if (!key) return;
   if (settings.keyboardHint) key.classList.add('target');
+  // Only scroll if the key is off screen, so the view stays steady.
   const wrap = $('#kb-wrap');
-  const left = key.offsetLeft - wrap.clientWidth / 2 + key.offsetWidth / 2;
-  wrap.scrollTo({ left: Math.max(0, left), behavior: 'smooth' });
+  const margin = 0;
+  if (key.offsetLeft < wrap.scrollLeft + margin || key.offsetLeft + key.offsetWidth > wrap.scrollLeft + wrap.clientWidth - margin) {
+    const left = key.offsetLeft - wrap.clientWidth / 2 + key.offsetWidth / 2;
+    wrap.scrollTo({ left: Math.max(0, left), behavior: 'smooth' });
+  }
 }
 
 /** Meters: level, gate line, heard note, cents. Runs on requestAnimationFrame. */
@@ -931,11 +1225,18 @@ async function keepAwake(on) {
 /* ===================== 11. SCREENS & UI ===================== */
 
 function show(name) {
+  stopPhrase();
   if (name !== state.screen) state.prevScreen = state.screen;
   state.screen = name;
   $$('.screen').forEach(s => s.classList.toggle('active', s.id === 'screen-' + name));
   window.scrollTo(0, 0);
-  if (name === 'play') { renderPlay(); updateMicUI(); }
+  if (name === 'play') {
+    $('#screen-play').classList.toggle('sheet-view', !!settings.sheetMusic);
+    fitKeyboardToSong();
+    renderPlay();
+    updateMicUI();
+    Roll.show();
+  }
   if (name === 'settings') renderSettings();
   if (name === 'songs') renderSongList();
   if (name === 'play' || name === 'settings') startMeters();
@@ -1107,8 +1408,12 @@ const SETTINGS_SCHEMA = [
     help: 'Higher catches quieter or messier notes but makes more mistakes. 0.15 is a good start.' },
   { key: 'clefSplit', type: 'range', min: 48, max: 72, step: 1, label: 'Treble / bass split', fmt: v => `${midiToName(v)}+ = treble`,
     help: 'Notes from this pitch up are drawn on the treble staff, lower ones on the bass staff.' },
+  { key: 'playbackSpeed', type: 'range', min: 0.5, max: 1, step: 0.05, label: '"Hear it" speed', fmt: v => `${Math.round(v * 100)}%`,
+    help: 'How fast the Hear it button plays the next notes. 100% is the real speed of the song; slow it down while learning.' },
   { key: 'keyboardHint', type: 'toggle', label: 'Highlight the target key', help: 'Shows which key to press on the on-screen piano.' },
   { key: 'tapSound', type: 'toggle', label: 'On-screen keys make a sound', help: '' },
+  { key: 'sheetMusic', type: 'toggle', label: 'Show sheet music instead of falling notes',
+    help: 'Falling notes come down onto the keys you should play. Turn this on to read from a music staff instead.' },
   { key: 'tapThroughDetector', type: 'toggle', label: 'Test mode: send on-screen keys through the pitch detector',
     help: 'Tapping a key synthesizes a tone and feeds it to the same detector the mic uses, so you can test detection without a piano.' }
 ];
@@ -1192,6 +1497,7 @@ function init() {
   $('#btn-import-save').addEventListener('click', saveImport);
   $$('input[name="chord"]').forEach(r => r.addEventListener('change', updateImportSummary));
 
+  $('#btn-hear').addEventListener('click', hearPhrase);
   $('#hand-picker').addEventListener('click', e => {
     const b = e.target.closest('button[data-hand]');
     if (!b || !state.song || b.dataset.hand === state.hand) return;
@@ -1200,11 +1506,14 @@ function init() {
     $('#feedback').textContent = '';
     renderPlay();
   });
-  $('#btn-restart').addEventListener('click', () => { state.idx = 0; Matcher.reset(); $('#feedback').textContent = ''; renderPlay(); });
+  $('#btn-restart').addEventListener('click', () => {
+    stopPhrase(); state.idx = 0; Matcher.reset(); $('#feedback').textContent = ''; renderPlay(); });
   $('#btn-skip').addEventListener('click', () => {
+    stopPhrase();
     if (state.song && state.idx < state.notes.length) { state.idx++; $('#feedback').textContent = ''; renderPlay(); }
   });
   $('#btn-prev').addEventListener('click', () => {
+    stopPhrase();
     if (state.idx > 0) { state.idx--; $('#feedback').textContent = ''; renderPlay(); }
   });
 
@@ -1240,7 +1549,7 @@ function init() {
   let resizeTimer = 0;
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => { if (state.screen === 'play') renderStaff(); }, 150);
+    resizeTimer = setTimeout(() => { if (state.screen === 'play') { renderStaff(); fitKeyboardToSong(); } }, 150);
   });
 
   updateMicUI();
@@ -1253,6 +1562,6 @@ if (typeof document !== 'undefined') {
 // Allow unit tests in Node: `node test-pitch.js`
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { yinDetect, analyzeFrame, synthTone, runPitchSelfTest, collapseToSequence, collapseEvents,
-    buildHandEvents, guessTrackHand, notesForHand,
+    buildHandEvents, guessTrackHand, notesForHand, phraseFrom, noteLength,
     midiToName, nameToMidi, midiToFreq, Matcher, DEFAULT_SETTINGS, TUNING, BUILTIN_SONGS };
 }

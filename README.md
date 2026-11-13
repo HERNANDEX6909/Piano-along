@@ -69,9 +69,18 @@ tap the **Share** button (square with an arrow) → **Add to Home Screen** → *
 - **Left hand / Right hand / Both**: at the top of the play screen. Practise each hand on its own
   until it flows, then try Both. Switching keeps your place in the song, and the app remembers
   your choice for each song.
-- **Play screen**: the big name is the note to play. The staff shows it in blue plus the next
-  four notes, on the treble or bass staff. **Skip** moves past a note, **Back** goes back one,
-  **Restart** starts over. The on-screen piano at the bottom works without the mic.
+- **Play screen**: the big name is the note to play. Above the on-screen piano, **falling notes**
+  come down onto the keys to press: right hand in blue, left hand in orange. The note to play
+  sits on the line above the keys (white outline) and waits there until you play it, then the
+  next one slides down. The keyboard shrinks its keys so the whole song fits on screen.
+  Prefer reading music? Settings → **Show sheet music instead of falling notes**.
+  **Skip** moves past a note, **Back** goes back one, **Restart** starts over. The on-screen
+  piano works without the mic.
+- **🔊 Hear it** plays the next few notes (up to 8, or about 6 seconds) at the song's real speed.
+  The falling notes move in time with the sound and each key lights up, so you know how the phrase should sound before you
+  play it. The mic is ignored while it plays, so the phone's speaker can't move the song along.
+  Slow it down with **"Hear it" speed** in Settings. Songs uploaded before this feature use their
+  original timing, but for exact note lengths re-upload them.
 - **Heard** shows what the mic detects (note, Hz, and how sharp/flat in cents) with a level meter.
 
 ## Settings
@@ -84,6 +93,8 @@ tap the **Share** button (square with an arrow) → **Add to Home Screen** → *
 | Hold time | 150 ms | How long a note must be steady before it counts |
 | Detection sensitivity | 0.15 | YIN threshold: higher catches more, but with more mistakes |
 | Treble / bass split | C4 | Notes from here up go on the treble staff |
+| "Hear it" speed | 100% | Playback speed of the Hear it button (50–100%) |
+| Sheet music | Off | Show the music staff instead of falling notes |
 | Test mode | Off | On-screen keys play a synthesized tone *through the pitch detector* |
 
 **Self-test** (in Settings) runs the detector on synthesized piano-like tones from C2 to C7

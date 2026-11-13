@@ -20,6 +20,7 @@
   --radius: 14px;
   --tap: 48px;               /* minimum touch target */
   --kb-height: 130px;
+  --roll-height: clamp(160px, 32vh, 300px); /* falling-notes lane above the keys */
   --white-w: 44px;           /* on-screen piano white key width */
   --black-w: 28px;
   color-scheme: light dark;
@@ -85,7 +86,11 @@ button { touch-action: manipulation; cursor: pointer; }
   width: 100%; max-width: 640px; margin: 0 auto;
   padding: 12px 16px calc(env(safe-area-inset-bottom) + 24px);
 }
-.content.play { padding-bottom: calc(var(--kb-height) + env(safe-area-inset-bottom) + 16px); }
+.content.play { padding-bottom: calc(var(--roll-height) + var(--kb-height) + env(safe-area-inset-bottom) + 16px); }
+/* Falling notes replace the staff; with "sheet music" on, it's the other way round. */
+#screen-play.sheet-view { --roll-height: 0px; }
+#screen-play.sheet-view .roll { display: none; }
+#screen-play:not(.sheet-view) .staff { display: none; }
 
 h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 22px 0 8px; }
 .card h2 { margin-top: 0; }
@@ -188,13 +193,14 @@ h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: v
 /* ---------- On-screen keyboard ---------- */
 .kb-wrap {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 4;
-  height: calc(var(--kb-height) + env(safe-area-inset-bottom));
+  height: calc(var(--roll-height) + var(--kb-height) + env(safe-area-inset-bottom));
   padding-bottom: env(safe-area-inset-bottom);
   background: #0e0f12;
   overflow-x: auto; overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   border-top: 2px solid #000;
 }
+.roll { display: block; height: var(--roll-height); }
 .kb { position: relative; height: var(--kb-height); user-select: none; -webkit-user-select: none; }
 .key { position: absolute; top: 0; border: 0; padding: 0; display: flex; align-items: flex-end; justify-content: center; }
 .key.white {
@@ -210,6 +216,9 @@ h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: v
 .key.target { background: var(--key-target); }
 .key.heard { background: var(--key-heard) !important; }
 .key.pressed { filter: brightness(.85); }
+.key.playing { background: var(--good) !important; }
+.hear-btn { margin-bottom: 8px; }
+.hand-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
 
 /* ---------- Settings ---------- */
 .setting { padding: 12px 0; border-bottom: 1px solid var(--border); }
