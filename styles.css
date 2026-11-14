@@ -321,3 +321,6 @@ h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: v
 #screen-play.sheet-view .roll-tools,
 #screen-play.sheet-view .show-notes,
 #screen-play.sheet-view .fs-bar { display: none; }
+
+/* ---------- Settings: version / updates ---------- */
+.about { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; }

@@ -21,6 +21,11 @@
 
 /* ===================== 1. CONFIG ===================== */
 
+// Release number. When you publish changes, raise it by 1 in THREE places so phones
+// pick up the new version: here, version.json, and index.html (the app-version meta
+// tag and the ?v= on styles.css and app.js).
+const APP_VERSION = 7;
+
 // User-adjustable settings (also shown on the Settings screen).
 const DEFAULT_SETTINGS = {
   anyOctave: true,          // accept the right note name in any octave
@@ -1334,7 +1339,10 @@ function show(name) {
     syncSpeedUI();
   }
   if (name === 'settings') renderSettings();
-  if (name === 'songs') renderSongList();
+  if (name === 'songs') {
+    renderSongList();
+    if (state.updatePending) checkForUpdate(); // update waited until you left the song
+  }
   if (name === 'play' || name === 'settings') startMeters();
   if (name !== 'play' && name !== 'settings') keepAwake(false);
 }
@@ -1579,6 +1587,38 @@ function showSelfTest() {
 
 /* ---------- Wiring ---------- */
 
+/* ---------- Updates ----------
+   GitHub Pages lets a phone keep each file for up to 10 minutes, and a Home
+   Screen app can't be pulled down to refresh. So the app checks version.json
+   itself: if a newer version is online, or the page and the code it loaded
+   don't match, it downloads the files again and reloads. */
+
+async function checkForUpdate(manual = false) {
+  try {
+    const meta = document.querySelector('meta[name="app-version"]');
+    const pageVersion = Number(meta ? meta.content : 0);
+    const res = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    const online = Number((await res.json()).version);
+    const mismatched = pageVersion !== APP_VERSION;   // old page + new code (or the reverse)
+    if (online === APP_VERSION && !mismatched) {
+      if (manual) alert(`You have the latest version (${APP_VERSION}).`);
+      return;
+    }
+    // Don't reload in the middle of practising: wait until you go back to the song list.
+    if (!manual && !mismatched && state.screen !== 'songs') { state.updatePending = true; return; }
+    // Only try once per version per visit, in case GitHub is still publishing it.
+    const key = 'piano-wait-mode.updated-to';
+    if (!manual && sessionStorage.getItem(key) === String(online)) return;
+    try { sessionStorage.setItem(key, String(online)); } catch (e) { /* private mode */ }
+    state.updatePending = false;
+    const files = ['./', 'index.html', 'app.js', 'styles.css', `app.js?v=${online}`, `styles.css?v=${online}`];
+    await Promise.all(files.map(f => fetch(f, { cache: 'reload' }).catch(() => {})));
+    location.reload();
+  } catch (e) {
+    if (manual) alert('Could not check for updates. Are you online?');
+  }
+}
+
 function init() {
   buildKeyboard();
   renderSongList();
@@ -1658,8 +1698,13 @@ function init() {
     if (document.visibilityState === 'visible') {
       updateMicUI();
       if (Engine.micOn && state.screen === 'play') keepAwake(true);
+      checkForUpdate();
     }
   });
+
+  $('#btn-update').addEventListener('click', () => checkForUpdate(true));
+  $('#app-version').textContent = `Version ${APP_VERSION}`;
+  checkForUpdate();
 
   let resizeTimer = 0;
   window.addEventListener('resize', () => {

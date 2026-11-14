@@ -32,6 +32,13 @@ The microphone only works on **https://** pages, and GitHub Pages gives you that
 
 To update later, upload the changed files again. Pages redeploys in about a minute.
 
+**Releasing an update:** raise the release number by 1 in three places: `APP_VERSION` near the
+top of `app.js`, `version.json`, and `index.html` (the `app-version` meta tag and the `?v=` on
+`styles.css` and `app.js`). Then upload those files plus anything else you changed. The app
+checks `version.json` when it opens or comes back to the screen. If a newer version is online, it
+downloads the new files and reloads. It waits until you're back on the song list, so it doesn't
+interrupt practice. Settings → **Check for updates** does it on demand.
+
 ## Open it on iPhone
 
 1. Open the `https://…github.io/…` link in **Safari**.
