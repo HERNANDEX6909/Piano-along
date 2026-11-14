@@ -19,8 +19,7 @@
   --key-heard: #fbbf24;
   --radius: 14px;
   --tap: 48px;               /* minimum touch target */
-  --kb-height: 130px;
-  --roll-height: clamp(160px, 32vh, 300px); /* falling-notes lane above the keys */
+  --kb-height: clamp(110px, 15vh, 150px); /* piano keys; the falling notes get the rest of the screen */
   --white-w: 44px;           /* on-screen piano white key width */
   --black-w: 28px;
   color-scheme: light dark;
@@ -86,10 +85,20 @@ button { touch-action: manipulation; cursor: pointer; }
   width: 100%; max-width: 640px; margin: 0 auto;
   padding: 12px 16px calc(env(safe-area-inset-bottom) + 24px);
 }
-.content.play { padding-bottom: calc(var(--roll-height) + var(--kb-height) + env(safe-area-inset-bottom) + 16px); }
+/* Play screen: exactly one screen tall (dvh follows Safari's toolbars), never scrolls. */
+#screen-play.active { height: 100vh; height: 100dvh; overflow: hidden; }
+.play-top {
+  flex: none; width: 100%; max-width: 640px; margin: 0 auto;
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 8px max(12px, env(safe-area-inset-left)) 8px max(12px, env(safe-area-inset-right));
+}
+.play-top .card { margin: 0; padding: 8px 12px; }
+.play-top .msg { margin: 0; }
+.stage { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 /* Falling notes replace the staff; with "sheet music" on, it's the other way round. */
-#screen-play.sheet-view { --roll-height: 0px; }
-#screen-play.sheet-view .roll { display: none; }
+#screen-play.sheet-view .roll-box { display: none; }
+#screen-play.sheet-view .kb-wrap { flex: none; }
+#screen-play.sheet-view .staff { flex: 1; min-height: 0; overflow: auto; margin: 0 12px 8px; }
 #screen-play:not(.sheet-view) .staff { display: none; }
 
 h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 22px 0 8px; }
@@ -149,12 +158,13 @@ h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: v
 }
 .hand-picker button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.2); }
 
-.target { text-align: center; padding-bottom: 10px; transition: background-color .2s; }
-.target-top { display: flex; justify-content: space-between; font-size: 14px; }
-.target-label { font-weight: 600; color: var(--muted); }
-.target-name { font-size: 56px; font-weight: 800; line-height: 1.05; letter-spacing: -.02em; }
-.target-hint { min-height: 20px; font-size: 14px; }
-.feedback { min-height: 22px; font-weight: 600; font-size: 15px; margin-top: 2px; }
+.target { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 14px; transition: background-color .2s; }
+.target-name { font-size: clamp(40px, 13vw, 60px); font-weight: 800; line-height: 1; letter-spacing: -.02em; min-width: 2.2em; text-align: center; }
+.target-side { min-width: 0; }
+.target-progress { font-size: 14px; font-weight: 600; color: var(--muted); }
+.target-hint { font-size: 14px; }
+.target .progress { grid-column: 1 / -1; }
+.feedback { min-height: 20px; font-weight: 600; font-size: 14px; }
 .target.good { background: color-mix(in srgb, var(--good) 18%, var(--surface)); }
 .target.bad { background: color-mix(in srgb, var(--bad) 16%, var(--surface)); animation: shake .35s; }
 .target.bad .feedback { color: var(--bad); }
@@ -174,7 +184,20 @@ h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: v
 }
 .staff svg { display: block; }
 
-.controls { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+.controls { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.play-top .btn { min-height: 44px; }
+.hear-row { display: flex; gap: 8px; }
+.hear-btn { flex: 1; }
+.hear-length {
+  flex: none; min-height: 44px; padding: 0 12px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--surface); font-weight: 600; font-size: 16px;
+}
+.listen { display: flex; align-items: center; gap: 10px; }
+.mic-btn { flex: 1; min-width: 0; padding: 0 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.heard { flex: none; width: 46%; display: flex; align-items: center; gap: 8px; }
+.heard .heard-name { font-size: 24px; min-width: 52px; }
+.heard-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.heard-meta .meter { margin: 4px 0 0; height: 10px; }
 
 .heard-row { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 10px; gap: 12px; }
 .heard-row.compact { align-items: center; margin: 8px 0; }
@@ -192,16 +215,17 @@ h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: v
 
 /* ---------- On-screen keyboard ---------- */
 .kb-wrap {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 4;
-  height: calc(var(--roll-height) + var(--kb-height) + env(safe-area-inset-bottom));
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
   padding-bottom: env(safe-area-inset-bottom);
   background: #0e0f12;
   overflow-x: auto; overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   border-top: 2px solid #000;
 }
-.roll { display: block; height: var(--roll-height); }
-.kb { position: relative; height: var(--kb-height); user-select: none; -webkit-user-select: none; }
+.roll-box { flex: 1; min-height: 80px; position: relative; }
+.roll { position: absolute; top: 0; left: 0; display: block; }
+.kb { flex: none; position: relative; height: var(--kb-height); user-select: none; -webkit-user-select: none; }
 .key { position: absolute; top: 0; border: 0; padding: 0; display: flex; align-items: flex-end; justify-content: center; }
 .key.white {
   width: var(--white-w); height: 100%;
@@ -217,7 +241,6 @@ h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: v
 .key.heard { background: var(--key-heard) !important; }
 .key.pressed { filter: brightness(.85); }
 .key.playing { background: var(--good) !important; }
-.hear-btn { margin-bottom: 8px; }
 .hand-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
 
 /* ---------- Settings ---------- */

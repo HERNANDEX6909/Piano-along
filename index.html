@@ -39,35 +39,32 @@
     </main>
   </section>
 
-  <!-- ===================== PLAY ===================== -->
+  <!-- ===================== PLAY =====================
+       Fits one phone screen with no scrolling: controls on top,
+       falling notes fill the middle, piano keys at the bottom. -->
   <section id="screen-play" class="screen">
     <header class="bar">
       <button id="btn-back" class="icon-btn bar-side" aria-label="Back to songs">‹ Songs</button>
       <h1 id="play-title">Song</h1>
       <button class="icon-btn bar-side" data-go="settings" aria-label="Settings">⚙︎</button>
     </header>
-    <main class="content play">
+    <main class="play-top">
       <!-- Practise one hand at a time until it flows, then both -->
       <div id="hand-picker" class="hand-picker" role="group" aria-label="Which hand to practise">
         <button type="button" data-hand="L" aria-pressed="false">Left hand</button>
         <button type="button" data-hand="R" aria-pressed="false">Right hand</button>
         <button type="button" data-hand="both" aria-pressed="true">Both</button>
       </div>
+
       <div id="target-card" class="card target">
-        <div class="target-top">
-          <span class="target-label">Play</span>
-          <span id="progress-text" class="muted">Note 1 of 1</span>
-        </div>
         <div id="target-name" class="target-name">—</div>
-        <div id="target-hint" class="muted target-hint"></div>
-        <div id="feedback" class="feedback" aria-live="polite"></div>
+        <div class="target-side">
+          <div id="progress-text" class="target-progress">Note 1 of 1</div>
+          <div id="target-hint" class="muted target-hint"></div>
+          <div id="feedback" class="feedback" aria-live="polite"></div>
+        </div>
         <div class="progress"><div id="progress-fill"></div></div>
       </div>
-
-      <div id="staff" class="staff" aria-label="Upcoming notes on the staff"></div>
-
-      <!-- Plays the next few notes at the song's real speed so you know how they should sound -->
-      <button id="btn-hear" class="btn block hear-btn">🔊 Hear it</button>
 
       <div class="controls">
         <button id="btn-restart" class="btn">↺ Restart</button>
@@ -75,28 +72,40 @@
         <button id="btn-skip" class="btn">Skip ›</button>
       </div>
 
-      <div class="card listen">
-        <button id="mic-btn" class="btn primary block">🎤 Start listening</button>
-        <div id="mic-msg" class="msg" hidden></div>
-        <div class="heard-row">
-          <div>
-            <div class="small muted">Heard</div>
-            <div class="heard-name" data-heard-name>—</div>
-          </div>
+      <!-- Plays the song from the current note at its real speed, for as long as you choose -->
+      <div class="hear-row">
+        <button id="btn-hear" class="btn hear-btn">🔊 Hear it</button>
+        <select id="hear-length" class="hear-length" aria-label="How long Hear it plays">
+          <option value="5">5 sec</option>
+          <option value="10">10 sec</option>
+          <option value="20">20 sec</option>
+          <option value="30">30 sec</option>
+          <option value="60">1 min</option>
+          <option value="0">Whole song</option>
+        </select>
+      </div>
+
+      <div class="listen">
+        <button id="mic-btn" class="btn primary mic-btn">🎤 Start listening</button>
+        <div class="heard">
+          <span class="heard-name" data-heard-name>—</span>
           <div class="heard-meta">
-            <div class="small muted" data-heard-freq>— Hz</div>
-            <div class="cents" title="Flat ← in tune → sharp"><div class="cents-mark" data-cents></div></div>
+            <span class="small muted" data-heard-freq>— Hz</span>
+            <div class="meter" title="Mic level. The line is the noise gate."><div class="level-fill"></div><div class="gate-mark"></div></div>
           </div>
         </div>
-        <div class="meter" title="Mic level. The line is the noise gate."><div class="level-fill"></div><div class="gate-mark"></div></div>
-        <div id="engine-info" class="small muted"></div>
       </div>
+      <div id="mic-msg" class="msg" hidden></div>
     </main>
-    <!-- On-screen piano (works without the mic) -->
-    <!-- Falling notes (canvas) + on-screen piano. They scroll sideways together. -->
-    <div class="kb-wrap" id="kb-wrap">
-      <canvas id="roll" class="roll" aria-hidden="true"></canvas>
-      <div id="keyboard" class="kb"></div>
+
+    <!-- Fills the rest of the screen: sheet music OR falling notes, then the piano keys -->
+    <div class="stage">
+      <div id="staff" class="staff" aria-label="Upcoming notes on the staff"></div>
+      <!-- Falling notes + on-screen piano (works without the mic). They scroll sideways together. -->
+      <div class="kb-wrap" id="kb-wrap">
+        <div class="roll-box" id="roll-box"><canvas id="roll" class="roll" aria-hidden="true"></canvas></div>
+        <div id="keyboard" class="kb"></div>
+      </div>
     </div>
   </section>
 
@@ -115,6 +124,7 @@
           <span class="heard-name small-name" data-heard-name>—</span>
           <span class="small muted" data-heard-freq>— Hz</span>
         </div>
+        <div id="engine-info" class="small muted"></div>
         <button id="btn-calibrate" class="btn block">Set noise gate from room noise (stay quiet 2 s)</button>
       </div>
 

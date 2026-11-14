@@ -33,6 +33,7 @@ const DEFAULT_SETTINGS = {
   tapSound: true,           // on-screen keys play a short tone
   tapThroughDetector: false,// on-screen keys are fed to the pitch detector (test mode)
   playbackSpeed: 1,         // "Hear it" speed: 1 = the song's real speed, 0.5 = half speed
+  hearSeconds: 10,          // how long "Hear it" plays (seconds); 0 = the rest of the song
   sheetMusic: false         // show sheet music instead of falling notes
 };
 
@@ -49,8 +50,7 @@ const TUNING = {
   chordWindowSec: 0.03,// MIDI notes starting within 30 ms are treated as one chord
   kbLow: 36,           // on-screen piano range: C2 …
   kbHigh: 96,          // … C7
-  hearNotes: 8,        // "Hear it" plays up to this many notes …
-  hearMaxSec: 6,       // … or this many seconds, whichever comes first
+  hearScheduleAheadSec: 1, // "Hear it" schedules notes this far ahead (keeps whole-song playback light)
   hearMaxGapSec: 1.5,  // long rests are shortened to this
   hearMuteTailMs: 400, // keep ignoring the mic this long after playback (echo)
   minWhiteKey: 18,     // on-screen piano: keys shrink to fit the song, down to this width (px) …
@@ -872,20 +872,18 @@ function scheduleNote(midi, when, dur, outputs, volume = 0.35) {
 /* ---------- "Hear it": play the next few notes at the song's real speed ---------- */
 
 /**
- * Pick the phrase to play: from the current note, up to TUNING.hearNotes notes
- * and TUNING.hearMaxSec seconds. Long rests are shortened so you're not left waiting.
+ * Pick what "Hear it" plays: from the current note for `maxSec` seconds of
+ * song (0 = to the end). Long rests are shortened so you're not left waiting.
  * Returns [{ midi, at, dur, idx }] with `at` in seconds from the start (before speed).
  */
-function phraseFrom(events, idx) {
+function phraseFrom(events, idx, maxSec = 0) {
   const out = [];
   let at = 0;
-  for (let i = idx; i < events.length && out.length < TUNING.hearNotes; i++) {
+  for (let i = idx; i < events.length; i++) {
     const n = events[i];
     if (i > idx) at += Math.min(n.time - events[i - 1].time, TUNING.hearMaxGapSec);
-    if (out.length && at > TUNING.hearMaxSec) break;
-    const next = events[i + 1];
-    const fallback = next ? Math.max(0.15, next.time - n.time) : 0.6;
-    out.push({ midi: n.midi, at, dur: Math.min(n.dur || fallback, 2), idx: i });
+    if (maxSec && out.length && at > maxSec) break;
+    out.push({ midi: n.midi, at, dur: Math.min(noteLength(events, i), 2), idx: i });
   }
   return out;
 }
@@ -897,15 +895,29 @@ function hearPhrase() {
   const ctx = Engine.ctx;
   const speed = settings.playbackSpeed;
   const start = ctx.currentTime + 0.08;
-  const notes = phraseFrom(state.events, state.idx);
-  // start/speed/notes let the falling notes move in time with the sound.
-  const phrase = { oscs: [], timers: [], start, speed, notes };
-  for (const n of notes) {
-    const when = start + n.at / speed;
-    phrase.oscs.push(...scheduleNote(n.midi, when, n.dur / speed, [ctx.destination], 0.3));
-    // Light up each key on the on-screen piano as it plays.
-    phrase.timers.push(setTimeout(() => flashKey(n.midi, Math.max(150, n.dur / speed * 1000)), (when - ctx.currentTime) * 1000));
-  }
+  const notes = phraseFrom(state.events, state.idx, settings.hearSeconds);
+  // start/speed/notes also let the falling notes move in time with the sound.
+  const phrase = { oscs: [], timers: [], start, speed, notes, next: 0, pump: 0 };
+
+  // Schedule about a second ahead at a time, so even a whole song starts
+  // instantly and doesn't create thousands of sounds up front.
+  const schedule = () => {
+    const horizon = ctx.currentTime + TUNING.hearScheduleAheadSec;
+    while (phrase.next < notes.length) {
+      const n = notes[phrase.next];
+      const when = start + n.at / speed;
+      if (when > horizon) break;
+      phrase.oscs.push(...scheduleNote(n.midi, when, n.dur / speed, [ctx.destination], 0.3));
+      // Light up each key on the on-screen piano as it plays.
+      phrase.timers.push(setTimeout(() => flashKey(n.midi, Math.max(150, n.dur / speed * 1000)),
+        Math.max(0, (when - ctx.currentTime) * 1000)));
+      phrase.next++;
+    }
+    if (phrase.oscs.length > 200) phrase.oscs.splice(0, phrase.oscs.length - 200); // old ones have finished
+  };
+  schedule();
+  phrase.pump = setInterval(schedule, 250);
+
   const last = notes[notes.length - 1];
   const totalMs = ((last.at + last.dur) / speed + 0.3) * 1000;
   phrase.timers.push(setTimeout(stopPhrase, totalMs));
@@ -919,6 +931,7 @@ function stopPhrase() {
   const p = state.phrase;
   if (!p) return;
   state.phrase = null;
+  clearInterval(p.pump);
   p.timers.forEach(clearTimeout);
   p.oscs.forEach(o => { try { o.stop(); } catch (e) { /* already stopped */ } });
   $$('.key.playing').forEach(k => k.classList.remove('playing'));
@@ -972,10 +985,14 @@ const Roll = {
     $$('.key').forEach(k => {
       this.keyPos[k.dataset.midi] = { x: k.offsetLeft, w: k.offsetWidth, black: k.classList.contains('black') };
     });
-    const w = $('#keyboard').offsetWidth, h = this.canvas.clientHeight;
+    const box = $('#roll-box');
+    const w = $('#keyboard').offsetWidth;
+    box.style.width = w + 'px';
+    const h = box.clientHeight;
     if (!w || !h) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2); // capped to keep the canvas small on iPhone
     this.canvas.style.width = w + 'px';
+    this.canvas.style.height = h + 'px';
     this.canvas.width = Math.round(w * dpr);
     this.canvas.height = Math.round(h * dpr);
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1498,6 +1515,14 @@ function init() {
   $$('input[name="chord"]').forEach(r => r.addEventListener('change', updateImportSummary));
 
   $('#btn-hear').addEventListener('click', hearPhrase);
+  const hearLength = $('#hear-length');
+  hearLength.value = String(settings.hearSeconds);
+  if (hearLength.selectedIndex < 0) hearLength.value = '10';
+  hearLength.addEventListener('change', () => { settings.hearSeconds = parseFloat(hearLength.value); saveSettings(); });
+  // The free space for falling notes changes with the screen (rotation, Safari toolbars, messages).
+  if ('ResizeObserver' in window) {
+    new ResizeObserver(() => { if (state.screen === 'play' && !settings.sheetMusic) Roll.measure(); }).observe($('#roll-box'));
+  }
   $('#hand-picker').addEventListener('click', e => {
     const b = e.target.closest('button[data-hand]');
     if (!b || !state.song || b.dataset.hand === state.hand) return;
