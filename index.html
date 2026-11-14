@@ -74,7 +74,7 @@
 
       <!-- Plays the song from the current note at its real speed, for as long as you choose -->
       <div class="hear-row">
-        <button id="btn-hear" class="btn hear-btn">🔊 Hear it</button>
+        <button id="btn-hear" class="btn hear-btn" data-hear>🔊 Hear it</button>
         <select id="hear-length" class="hear-length" aria-label="How long Hear it plays">
           <option value="5">5 sec</option>
           <option value="10">10 sec</option>
@@ -83,6 +83,12 @@
           <option value="60">1 min</option>
           <option value="0">Whole song</option>
         </select>
+      </div>
+      <!-- Playback speed: drag while it plays to find your pace -->
+      <div class="speed-row">
+        <span class="speed-label">Speed</span>
+        <input type="range" class="speed-slider" min="0.25" max="1.5" step="0.01" value="1" aria-label="Playback speed">
+        <span class="speed-value" data-speed-value>100%</span>
       </div>
 
       <div class="listen">
@@ -100,7 +106,30 @@
 
     <!-- Fills the rest of the screen: sheet music OR falling notes, then the piano keys -->
     <div class="stage">
+      <!-- Full-screen mode only: the essentials in one slim bar -->
+      <div id="fs-bar" class="fs-bar">
+        <div class="fs-row">
+          <button class="btn" data-view="normal">⤡ Exit</button>
+          <div class="fs-note"><span id="fs-target">—</span> <span id="fs-progress" class="muted"></span></div>
+          <button class="btn" data-view="hidden">Hide</button>
+          <button class="btn" data-hear>🔊 Hear it</button>
+        </div>
+        <!-- Playback speed: drag while it plays to find your pace -->
+        <div class="speed-row">
+        <span class="speed-label">Speed</span>
+        <input type="range" class="speed-slider" min="0.25" max="1.5" step="0.01" value="1" aria-label="Playback speed">
+        <span class="speed-value" data-speed-value>100%</span>
+        </div>
+      </div>
+
       <div id="staff" class="staff" aria-label="Upcoming notes on the staff"></div>
+
+      <!-- Falling-notes buttons (top-right corner) -->
+      <div class="roll-tools">
+        <button type="button" data-view="full">⤢ Full screen</button>
+        <button type="button" data-view="hidden">Hide notes</button>
+      </div>
+      <button type="button" class="btn show-notes" data-view="normal">Show falling notes</button>
       <!-- Falling notes + on-screen piano (works without the mic). They scroll sideways together. -->
       <div class="kb-wrap" id="kb-wrap">
         <div class="roll-box" id="roll-box"><canvas id="roll" class="roll" aria-hidden="true"></canvas></div>

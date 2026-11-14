@@ -34,7 +34,8 @@ const DEFAULT_SETTINGS = {
   tapThroughDetector: false,// on-screen keys are fed to the pitch detector (test mode)
   playbackSpeed: 1,         // "Hear it" speed: 1 = the song's real speed, 0.5 = half speed
   hearSeconds: 10,          // how long "Hear it" plays (seconds); 0 = the rest of the song
-  sheetMusic: false         // show sheet music instead of falling notes
+  sheetMusic: false,        // show sheet music instead of falling notes
+  rollView: 'normal'        // falling notes: 'normal', 'full' (full screen) or 'hidden'
 };
 
 // Lower-level tuning. Change these if you know what you're doing.
@@ -50,6 +51,8 @@ const TUNING = {
   chordWindowSec: 0.03,// MIDI notes starting within 30 ms are treated as one chord
   kbLow: 36,           // on-screen piano range: C2 …
   kbHigh: 96,          // … C7
+  speedMin: 0.25,      // playback speed slider: 25% …
+  speedMax: 1.5,       // … to 150% of the song's real speed
   hearScheduleAheadSec: 1, // "Hear it" schedules notes this far ahead (keeps whole-song playback light)
   hearMaxGapSec: 1.5,  // long rests are shortened to this
   hearMuteTailMs: 400, // keep ignoring the mic this long after playback (echo)
@@ -643,14 +646,16 @@ function handleNote(midi) {
 }
 
 function showFeedback(kind, text) {
-  const card = $('#target-card');
-  card.classList.remove('good', 'bad');
-  void card.offsetWidth; // restart CSS animation
-  card.classList.add(kind);
+  const cards = [$('#target-card'), $('#fs-bar')]; // the full-screen bar flashes too
+  cards.forEach(card => {
+    card.classList.remove('good', 'bad');
+    void card.offsetWidth; // restart CSS animation
+    card.classList.add(kind);
+  });
   $('#feedback').textContent = text;
   clearTimeout(state.feedbackTimer);
   state.feedbackTimer = setTimeout(() => {
-    card.classList.remove('good', 'bad');
+    cards.forEach(card => card.classList.remove('good', 'bad'));
     if (state.song && state.idx < state.notes.length) $('#feedback').textContent = '';
   }, TUNING.feedbackMs);
 }
@@ -723,6 +728,8 @@ function renderPlay() {
   const done = state.idx >= total;
   $('#play-title').textContent = song.name;
   $('#progress-text').textContent = done ? `${total} of ${total} ✓` : `Note ${state.idx + 1} of ${total}`;
+  $('#fs-target').textContent = !total ? '—' : done ? '🎉' : midiToName(state.notes[state.idx]);
+  $('#fs-progress').textContent = total ? `${Math.min(state.idx + 1, total)} / ${total}` : '';
   $('#progress-fill').style.width = (total ? 100 * state.idx / total : 0) + '%';
   if (!total) {
     $('#progress-text').textContent = '0 notes';
@@ -893,38 +900,75 @@ function hearPhrase() {
   if (!state.song || state.idx >= state.events.length) return;
   try { Engine.ensureContext(); } catch (e) { return; }
   const ctx = Engine.ctx;
-  const speed = settings.playbackSpeed;
-  const start = ctx.currentTime + 0.08;
-  const notes = phraseFrom(state.events, state.idx, settings.hearSeconds);
   // start/speed/notes also let the falling notes move in time with the sound.
-  const phrase = { oscs: [], timers: [], start, speed, notes, next: 0, pump: 0 };
-
-  // Schedule about a second ahead at a time, so even a whole song starts
-  // instantly and doesn't create thousands of sounds up front.
-  const schedule = () => {
-    const horizon = ctx.currentTime + TUNING.hearScheduleAheadSec;
-    while (phrase.next < notes.length) {
-      const n = notes[phrase.next];
-      const when = start + n.at / speed;
-      if (when > horizon) break;
-      phrase.oscs.push(...scheduleNote(n.midi, when, n.dur / speed, [ctx.destination], 0.3));
-      // Light up each key on the on-screen piano as it plays.
-      phrase.timers.push(setTimeout(() => flashKey(n.midi, Math.max(150, n.dur / speed * 1000)),
-        Math.max(0, (when - ctx.currentTime) * 1000)));
-      phrase.next++;
-    }
-    if (phrase.oscs.length > 200) phrase.oscs.splice(0, phrase.oscs.length - 200); // old ones have finished
+  // scheduled = notes already handed to the audio engine (so they can be re-timed).
+  state.phrase = {
+    start: ctx.currentTime + 0.08,
+    speed: settings.playbackSpeed,
+    notes: phraseFrom(state.events, state.idx, settings.hearSeconds),
+    next: 0, scheduled: [], pump: 0, endTimer: 0
   };
-  schedule();
-  phrase.pump = setInterval(schedule, 250);
-
-  const last = notes[notes.length - 1];
-  const totalMs = ((last.at + last.dur) / speed + 0.3) * 1000;
-  phrase.timers.push(setTimeout(stopPhrase, totalMs));
-  state.phrase = phrase;
-  state.muteUntil = performance.now() + totalMs + TUNING.hearMuteTailMs;
+  // Schedule about a second ahead at a time, so even a whole song starts
+  // instantly and a speed change can re-time everything not yet played.
+  schedulePhrase();
+  state.phrase.pump = setInterval(schedulePhrase, 250);
+  armPhraseEnd();
   Matcher.reset();
-  $('#btn-hear').textContent = '■ Stop';
+  $$('[data-hear]').forEach(b => { b.textContent = '■ Stop'; });
+}
+
+function schedulePhrase() {
+  const p = state.phrase;
+  if (!p) return;
+  const ctx = Engine.ctx;
+  const horizon = ctx.currentTime + TUNING.hearScheduleAheadSec;
+  while (p.next < p.notes.length) {
+    const n = p.notes[p.next];
+    const when = p.start + n.at / p.speed;
+    if (when > horizon) break;
+    const oscs = scheduleNote(n.midi, when, n.dur / p.speed, [ctx.destination], 0.3);
+    // Light up each key on the on-screen piano as it plays.
+    const timer = setTimeout(() => flashKey(n.midi, Math.max(150, n.dur / p.speed * 1000)),
+      Math.max(0, (when - ctx.currentTime) * 1000));
+    p.scheduled.push({ i: p.next, when, oscs, timer });
+    p.next++;
+  }
+  // Forget notes that finished a while ago.
+  p.scheduled = p.scheduled.filter(sch => sch.when > ctx.currentTime - 3);
+}
+
+/** Stop when the last note ends (at the current speed); keep the mic muted until then. */
+function armPhraseEnd() {
+  const p = state.phrase, ctx = Engine.ctx;
+  const last = p.notes[p.notes.length - 1];
+  const endsIn = Math.max(0, p.start + (last.at + last.dur) / p.speed + 0.3 - ctx.currentTime);
+  clearTimeout(p.endTimer);
+  p.endTimer = setTimeout(stopPhrase, endsIn * 1000);
+  state.muteUntil = performance.now() + endsIn * 1000 + TUNING.hearMuteTailMs;
+}
+
+/**
+ * Change speed while playing: keep the current spot in the song, cancel the
+ * notes that haven't started yet and schedule them again at the new speed.
+ */
+function retimePhrase(speed) {
+  const p = state.phrase;
+  if (!p || speed === p.speed) return;
+  const now = Engine.ctx.currentTime;
+  const at = Math.max(0, (now - p.start) * p.speed);
+  p.start = now - at / speed;
+  p.speed = speed;
+  let first = p.next;
+  p.scheduled = p.scheduled.filter(sch => {
+    if (sch.when <= now + 0.01) return true; // already sounding
+    sch.oscs.forEach(o => { try { o.stop(); } catch (e) { /* never started */ } });
+    clearTimeout(sch.timer);
+    first = Math.min(first, sch.i);
+    return false;
+  });
+  p.next = first;
+  schedulePhrase();
+  armPhraseEnd();
 }
 
 function stopPhrase() {
@@ -932,12 +976,15 @@ function stopPhrase() {
   if (!p) return;
   state.phrase = null;
   clearInterval(p.pump);
-  p.timers.forEach(clearTimeout);
-  p.oscs.forEach(o => { try { o.stop(); } catch (e) { /* already stopped */ } });
+  clearTimeout(p.endTimer);
+  p.scheduled.forEach(sch => {
+    clearTimeout(sch.timer);
+    sch.oscs.forEach(o => { try { o.stop(); } catch (e) { /* already stopped */ } });
+  });
   $$('.key.playing').forEach(k => k.classList.remove('playing'));
   state.muteUntil = Math.min(state.muteUntil, performance.now() + TUNING.hearMuteTailMs);
   Matcher.reset();
-  $('#btn-hear').textContent = '🔊 Hear it';
+  $$('[data-hear]').forEach(b => { b.textContent = '🔊 Hear it'; });
 }
 
 function flashKey(midi, ms) {
@@ -947,6 +994,37 @@ function flashKey(midi, ms) {
   clearTimeout(key._flashTimer);
   key.classList.add('playing');
   key._flashTimer = setTimeout(() => key.classList.remove('playing'), ms * 0.8);
+}
+
+/* ---------- Falling-notes view: normal, full screen or hidden ---------- */
+
+function setView(view) {
+  settings.rollView = view;
+  saveSettings();
+  applyView();
+}
+
+function applyView() {
+  const screen = $('#screen-play');
+  screen.classList.toggle('view-full', settings.rollView === 'full');
+  screen.classList.toggle('view-hidden', settings.rollView === 'hidden');
+  // Layout changed: re-measure the keys and the falling-notes area.
+  fitKeyboardToSong();
+  Roll.show();
+}
+
+/* ---------- Playback speed slider ---------- */
+
+function setSpeed(speed) {
+  settings.playbackSpeed = Math.max(TUNING.speedMin, Math.min(TUNING.speedMax, speed));
+  saveSettings();
+  syncSpeedUI();
+  retimePhrase(settings.playbackSpeed); // takes effect immediately if Hear it is playing
+}
+
+function syncSpeedUI() {
+  $$('.speed-slider').forEach(sl => { sl.value = settings.playbackSpeed; });
+  $$('[data-speed-value]').forEach(v => { v.textContent = Math.round(settings.playbackSpeed * 100) + '%'; });
 }
 
 /* ---------- Falling notes ---------- */
@@ -972,7 +1050,7 @@ const Roll = {
 
   /** Show the lane (play screen, falling-notes view). */
   show() {
-    if (settings.sheetMusic) return;
+    if (settings.sheetMusic || settings.rollView === 'hidden') return;
     this.measure();
     this.start();
   },
@@ -1009,7 +1087,7 @@ const Roll = {
 
   frame(now) {
     this.raf = 0;
-    if (state.screen !== 'play' || settings.sheetMusic) return;
+    if (state.screen !== 'play' || settings.sheetMusic || settings.rollView === 'hidden') return;
     const dt = Math.min(0.1, (now - this.lastFrame) / 1000);
     this.lastFrame = now;
     const target = this.targetTime();
@@ -1252,7 +1330,8 @@ function show(name) {
     fitKeyboardToSong();
     renderPlay();
     updateMicUI();
-    Roll.show();
+    applyView();
+    syncSpeedUI();
   }
   if (name === 'settings') renderSettings();
   if (name === 'songs') renderSongList();
@@ -1425,7 +1504,7 @@ const SETTINGS_SCHEMA = [
     help: 'Higher catches quieter or messier notes but makes more mistakes. 0.15 is a good start.' },
   { key: 'clefSplit', type: 'range', min: 48, max: 72, step: 1, label: 'Treble / bass split', fmt: v => `${midiToName(v)}+ = treble`,
     help: 'Notes from this pitch up are drawn on the treble staff, lower ones on the bass staff.' },
-  { key: 'playbackSpeed', type: 'range', min: 0.5, max: 1, step: 0.05, label: '"Hear it" speed', fmt: v => `${Math.round(v * 100)}%`,
+  { key: 'playbackSpeed', type: 'range', min: TUNING.speedMin, max: TUNING.speedMax, step: 0.01, label: 'Playback speed', fmt: v => `${Math.round(v * 100)}%`,
     help: 'How fast the Hear it button plays the next notes. 100% is the real speed of the song; slow it down while learning.' },
   { key: 'keyboardHint', type: 'toggle', label: 'Highlight the target key', help: 'Shows which key to press on the on-screen piano.' },
   { key: 'tapSound', type: 'toggle', label: 'On-screen keys make a sound', help: '' },
@@ -1514,7 +1593,18 @@ function init() {
   $('#btn-import-save').addEventListener('click', saveImport);
   $$('input[name="chord"]').forEach(r => r.addEventListener('change', updateImportSummary));
 
-  $('#btn-hear').addEventListener('click', hearPhrase);
+  $$('[data-hear]').forEach(b => b.addEventListener('click', hearPhrase));
+  // Full screen / hide / show buttons for the falling notes.
+  $('#screen-play').addEventListener('click', e => {
+    const b = e.target.closest('[data-view]');
+    if (b) setView(b.dataset.view);
+  });
+  // Speed sliders (one on the play screen, one in the full-screen bar) stay in sync.
+  $$('.speed-slider').forEach(sl => {
+    sl.min = TUNING.speedMin;
+    sl.max = TUNING.speedMax;
+    sl.addEventListener('input', () => setSpeed(parseFloat(sl.value)));
+  });
   const hearLength = $('#hear-length');
   hearLength.value = String(settings.hearSeconds);
   if (hearLength.selectedIndex < 0) hearLength.value = '10';

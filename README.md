@@ -73,6 +73,9 @@ tap the **Share** button (square with an arrow) → **Add to Home Screen** → *
   come down onto the keys to press: right hand in blue, left hand in orange. The note to play
   sits on the line above the keys (white outline) and waits there until you play it, then the
   next one slides down. The keyboard shrinks its keys so the whole song fits on screen.
+  Use **⤢ Full screen** (top-right of the falling notes) to hide everything except the notes, the
+  keys and a slim bar with the note, Hear it and the speed slider. **Hide notes** removes them;
+  **Show falling notes** brings them back. The app remembers your choice.
   Prefer reading music? Settings → **Show sheet music instead of falling notes**.
   **Skip** moves past a note, **Back** goes back one, **Restart** starts over. The on-screen
   piano works without the mic.
@@ -80,7 +83,7 @@ tap the **Share** button (square with an arrow) → **Add to Home Screen** → *
   sets how long: 5, 10, 20 or 30 seconds, 1 minute, or the whole song. Tap **■ Stop** at any time.
   The falling notes move in time with the sound and each key lights up. The mic is ignored while
   it plays, so the phone's speaker can't move the song along. Slow it down with
-  **"Hear it" speed** in Settings.
+  the **Speed** slider (25%–150%). Drag it while it plays: the speed changes instantly, without losing your place.
 - **Heard** shows what the mic detects (note, Hz, and how sharp/flat in cents) with a level meter.
 
 ## Settings
@@ -93,7 +96,7 @@ tap the **Share** button (square with an arrow) → **Add to Home Screen** → *
 | Hold time | 150 ms | How long a note must be steady before it counts |
 | Detection sensitivity | 0.15 | YIN threshold: higher catches more, but with more mistakes |
 | Treble / bass split | C4 | Notes from here up go on the treble staff |
-| "Hear it" speed | 100% | Playback speed of the Hear it button (50–100%) |
+| Playback speed | 100% | Hear it speed, 25–150% (also a slider on the play screen) |
 | Sheet music | Off | Show the music staff instead of falling notes |
 | Test mode | Off | On-screen keys play a synthesized tone *through the pitch detector* |
 
